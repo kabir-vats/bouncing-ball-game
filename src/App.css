@@ -35,6 +35,7 @@ canvas {
 .status-strip,
 .action-bar,
 .help-shell,
+.mode-select-shell,
 .menu-shell {
   position: absolute;
   z-index: 2;
@@ -67,6 +68,49 @@ canvas {
   gap: 8px;
   align-items: center;
   transform: translateX(-50%);
+}
+
+.mode-select-shell {
+  top: 18px;
+  left: 50%;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  transform: translateX(-50%);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 999px;
+  padding: 5px 8px 5px 10px;
+  color: var(--muted);
+  background: rgba(2, 6, 23, 0.62);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(16px);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.mode-select-shell select {
+  border: 0;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+}
+
+.play-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.play-overlay button {
+  pointer-events: auto;
+  padding: 16px 26px;
+  color: #06111f;
+  background: var(--accent);
+  box-shadow: 0 18px 54px rgba(103, 232, 249, 0.24);
+  font-size: 1.15rem;
 }
 
 .help-shell {
@@ -189,6 +233,12 @@ canvas {
   color: var(--text);
   background: rgba(15, 23, 42, 0.86);
   font: inherit;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
 
 .select-field select:disabled {
@@ -353,6 +403,17 @@ button.compact {
     transform: none;
   }
 
+  .mode-select-shell {
+    top: 8px;
+    max-width: calc(100% - 104px);
+    padding: 4px 6px 4px 8px;
+    font-size: 0.68rem;
+  }
+
+  .mode-select-shell select {
+    max-width: 132px;
+  }
+
   .action-bar button {
     padding: 7px 6px;
     font-size: 0.72rem;
@@ -408,6 +469,17 @@ button.compact {
     align-self: center;
     justify-self: start;
     transform: none;
+  }
+
+  .mode-select-shell {
+    top: 8px;
+    max-width: calc(100% - 104px);
+    padding: 4px 6px 4px 8px;
+    font-size: 0.68rem;
+  }
+
+  .mode-select-shell select {
+    max-width: 132px;
   }
 
   .action-bar button {
