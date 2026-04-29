@@ -322,35 +322,118 @@ button.compact {
 }
 
 @media (max-width: 680px) {
+  .app-shell {
+    grid-template-rows: 1fr auto;
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .game-stage {
+    width: min(calc(100vw - 16px), calc((100svh - 78px) * 1.6));
+    height: min(calc(100svh - 78px), calc((100vw - 16px) / 1.6));
+    align-self: end;
+  }
+
   .status-strip {
-    left: 16px;
-    bottom: 16px;
+    left: 8px;
+    bottom: 8px;
+    gap: 7px;
+    padding: 5px 8px;
+    font-size: 0.72rem;
   }
 
   .action-bar {
-    right: 16px;
-    bottom: 16px;
-    left: auto;
-    flex-direction: column;
-    align-items: stretch;
+    position: static;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    width: min(calc(100vw - 16px), 540px);
+    gap: 6px;
+    align-self: start;
+    justify-self: center;
     transform: none;
   }
 
   .action-bar button {
-    padding: 10px 12px;
+    padding: 7px 6px;
+    font-size: 0.72rem;
+    white-space: nowrap;
   }
 
   .help-shell {
-    left: 16px;
-    top: 16px;
+    left: 8px;
+    top: 8px;
   }
 
   .menu-shell {
-    top: 16px;
-    right: 16px;
+    top: 8px;
+    right: 8px;
+  }
+
+  .menu-toggle {
+    min-width: 78px;
+  }
+
+  .icon-button {
+    width: 30px;
+    height: 30px;
   }
 
   .hud {
-    max-height: calc(100svh - 70px);
+    width: min(340px, calc(100vw - 16px));
+    max-height: calc(100svh - 72px);
+    padding: 14px;
+  }
+}
+
+@media (max-width: 900px) and (orientation: landscape) {
+  .app-shell {
+    grid-template-columns: 1fr auto;
+    grid-template-rows: 1fr;
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .game-stage {
+    width: min(calc(100vw - 116px), calc((100svh - 16px) * 1.6));
+    height: min(calc(100svh - 16px), calc((100vw - 116px) / 1.6));
+    justify-self: end;
+  }
+
+  .action-bar {
+    position: static;
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 92px;
+    gap: 6px;
+    align-self: center;
+    justify-self: start;
+    transform: none;
+  }
+
+  .action-bar button {
+    padding: 7px 6px;
+    font-size: 0.68rem;
+    white-space: normal;
+  }
+
+  .status-strip {
+    left: 8px;
+    bottom: 8px;
+    padding: 5px 8px;
+    font-size: 0.72rem;
+  }
+
+  .help-shell {
+    left: 8px;
+    top: 8px;
+  }
+
+  .menu-shell {
+    top: 8px;
+    right: 8px;
+  }
+
+  .menu-toggle {
+    min-width: 78px;
   }
 }
