@@ -27,6 +27,8 @@ const rippleSettleDuration = 2.45
 function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const animationRef = useRef<number | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const lastSoundBounceRef = useRef(-1)
   const replayStartedAt = useRef<number | null>(null)
   const [currentScene, setCurrentScene] = useState(scene)
   const [generatorConfig, setGeneratorConfig] = useState(defaultGeneratorConfig)
@@ -126,6 +128,14 @@ function App() {
     setGuesses((current) => current.slice(0, -1))
   }, [])
 
+  const enableAudio = useCallback(() => {
+    audioContextRef.current ??= new AudioContext()
+
+    if (audioContextRef.current.state === 'suspended') {
+      void audioContextRef.current.resume()
+    }
+  }, [])
+
   useEffect(() => {
     const canvas = canvasRef.current
     const container = canvas?.parentElement
@@ -148,6 +158,7 @@ function App() {
     }
 
     if (phase === 'preview') {
+      lastSoundBounceRef.current = -1
       const startedAt = performance.now()
 
       const tick = (now: number) => {
@@ -166,6 +177,7 @@ function App() {
     }
 
     if (phase === 'replay') {
+      lastSoundBounceRef.current = -1
       const tick = (now: number) => {
         replayStartedAt.current ??= now
         const elapsed = Math.min((now - replayStartedAt.current) / 1000, replayDuration)
@@ -188,6 +200,22 @@ function App() {
       }
     }
   }, [phase, targetBounces])
+
+  useEffect(() => {
+    if (phase !== 'preview' && phase !== 'replay') {
+      return
+    }
+
+    const currentBounceIndex = simulation.bounces.findLastIndex((bounce) => bounce.time <= revealedTime)
+    if (currentBounceIndex > lastSoundBounceRef.current) {
+      const bounce = simulation.bounces[currentBounceIndex]
+      lastSoundBounceRef.current = currentBounceIndex
+
+      if (bounce && revealedTime - bounce.time < 0.05) {
+        playBounceSound(audioContextRef.current, bounce.source)
+      }
+    }
+  }, [phase, revealedTime, simulation.bounces])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -228,7 +256,10 @@ function App() {
             ref={canvasRef}
             aria-label="Bouncy game board"
             height={currentScene.height}
-            onClick={handleCanvasClick}
+            onClick={(event) => {
+              enableAudio()
+              handleCanvasClick(event)
+            }}
             width={currentScene.width}
           />
         </div>
@@ -242,8 +273,23 @@ function App() {
         </div>
 
         <div className="action-bar">
-          <button type="button" onClick={lockIn} disabled={phase !== 'guessing' || guesses.length === 0}>
+          <button
+            type="button"
+            onClick={() => {
+              enableAudio()
+              lockIn()
+            }}
+            disabled={phase !== 'guessing' || guesses.length === 0}
+          >
             Lock guesses
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={undoGuess}
+            disabled={phase !== 'guessing' || guesses.length === 0}
+          >
+            Undo
           </button>
           <button type="button" className="secondary" onClick={randomizeRound} disabled={phase === 'replay'}>
             Randomize
@@ -263,7 +309,12 @@ function App() {
           >
             ?
           </button>
-          {helpOpen && <div className="help-popover">Instructions placeholder: watch, predict, lock in, then score.</div>}
+          {helpOpen && (
+            <div className="help-popover">
+              Watch the ball and predict its next {targetBounces.length} bounces. Customize your game in settings.
+              Beta / demo version.
+            </div>
+          )}
         </div>
 
         <div className="menu-shell">
@@ -367,17 +418,6 @@ function App() {
               </section>
 
               <p className="hint">{getHint(phase, guesses.length, targetBounces.length)}</p>
-
-              <div className="controls">
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={undoGuess}
-                  disabled={phase !== 'guessing' || guesses.length === 0}
-                >
-                  Undo
-                </button>
-              </div>
 
               {score !== null && (
                 <div className="score-card">
@@ -722,6 +762,36 @@ function getImpactAge(bounces: Bounce[], time: number) {
 
   const age = time - recentBounce.time
   return age <= 0.18 ? age : null
+}
+
+function playBounceSound(audioContext: AudioContext | null, source: Bounce['source']) {
+  if (!audioContext || audioContext.state !== 'running') {
+    return
+  }
+
+  const now = audioContext.currentTime
+  const oscillator = audioContext.createOscillator()
+  const gain = audioContext.createGain()
+  const filter = audioContext.createBiquadFilter()
+  const startFrequency = source === 'wall' ? 270 : 360
+
+  oscillator.type = 'triangle'
+  oscillator.frequency.setValueAtTime(startFrequency, now)
+  oscillator.frequency.exponentialRampToValueAtTime(startFrequency * 0.46, now + 0.09)
+
+  filter.type = 'lowpass'
+  filter.frequency.setValueAtTime(1400, now)
+  filter.frequency.exponentialRampToValueAtTime(420, now + 0.11)
+
+  gain.gain.setValueAtTime(0.0001, now)
+  gain.gain.exponentialRampToValueAtTime(0.08, now + 0.008)
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.13)
+
+  oscillator.connect(filter)
+  filter.connect(gain)
+  gain.connect(audioContext.destination)
+  oscillator.start(now)
+  oscillator.stop(now + 0.14)
 }
 
 function getDistance(first: Point, second: Point) {
