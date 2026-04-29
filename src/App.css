@@ -33,7 +33,6 @@ canvas {
 }
 
 .status-strip,
-.action-bar,
 .help-shell,
 .mode-select-shell,
 .menu-shell {
@@ -61,15 +60,6 @@ canvas {
   color: var(--text);
 }
 
-.action-bar {
-  left: 50%;
-  bottom: 18px;
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  transform: translateX(-50%);
-}
-
 .mode-select-shell {
   top: 18px;
   left: 50%;
@@ -89,10 +79,23 @@ canvas {
 }
 
 .mode-select-shell select {
-  border: 0;
+  appearance: none;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 999px;
+  padding: 4px 26px 4px 10px;
   color: var(--text);
-  background: transparent;
+  background:
+    linear-gradient(45deg, transparent 50%, var(--accent) 50%) calc(100% - 14px) 50% / 6px 6px no-repeat,
+    linear-gradient(135deg, var(--accent) 50%, transparent 50%) calc(100% - 10px) 50% / 6px 6px no-repeat,
+    rgba(15, 23, 42, 0.92);
   font: inherit;
+  color-scheme: dark;
+}
+
+.mode-select-shell select option,
+.select-field select option {
+  color: var(--text);
+  background: #0f172a;
 }
 
 .play-overlay {
@@ -133,6 +136,33 @@ canvas {
   color: var(--muted);
   font-size: 0.82rem;
   font-weight: 750;
+}
+
+.score-line {
+  border-left: 3px solid currentColor;
+  border-radius: 8px;
+  padding: 3px 8px;
+  text-align: left;
+}
+
+.score-line.great {
+  color: #86efac;
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.score-line.good {
+  color: #67e8f9;
+  background: rgba(103, 232, 249, 0.1);
+}
+
+.score-line.okay {
+  color: #facc15;
+  background: rgba(250, 204, 21, 0.1);
+}
+
+.score-line.miss {
+  color: #fda4af;
+  background: rgba(244, 63, 94, 0.12);
 }
 
 .final-score-menu {
@@ -293,10 +323,15 @@ canvas {
   width: 100%;
   border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: 16px;
-  padding: 11px 13px;
+  appearance: none;
+  padding: 11px 34px 11px 13px;
   color: var(--text);
-  background: rgba(15, 23, 42, 0.86);
+  background:
+    linear-gradient(45deg, transparent 50%, var(--accent) 50%) calc(100% - 18px) 50% / 7px 7px no-repeat,
+    linear-gradient(135deg, var(--accent) 50%, transparent 50%) calc(100% - 13px) 50% / 7px 7px no-repeat,
+    rgba(15, 23, 42, 0.92);
   font: inherit;
+  color-scheme: dark;
 }
 
 .settings-grid {
@@ -437,15 +472,13 @@ button.compact {
 
 @media (max-width: 680px) {
   .app-shell {
-    grid-template-rows: 1fr auto;
-    gap: 8px;
+    grid-template-rows: 1fr;
     padding: 8px;
   }
 
   .game-stage {
-    width: min(calc(100vw - 16px), calc((100svh - 78px) * 1.6));
-    height: min(calc(100svh - 78px), calc((100vw - 16px) / 1.6));
-    align-self: end;
+    width: min(calc(100vw - 16px), calc((100svh - 16px) * 1.6));
+    height: min(calc(100svh - 16px), calc((100vw - 16px) / 1.6));
   }
 
   .status-strip {
@@ -454,17 +487,6 @@ button.compact {
     gap: 7px;
     padding: 5px 8px;
     font-size: 0.72rem;
-  }
-
-  .action-bar {
-    position: static;
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    width: min(calc(100vw - 16px), 540px);
-    gap: 6px;
-    align-self: start;
-    justify-self: center;
-    transform: none;
   }
 
   .mode-select-shell {
@@ -476,12 +498,6 @@ button.compact {
 
   .mode-select-shell select {
     max-width: 132px;
-  }
-
-  .action-bar button {
-    padding: 7px 6px;
-    font-size: 0.72rem;
-    white-space: nowrap;
   }
 
   .help-shell {
@@ -512,27 +528,14 @@ button.compact {
 
 @media (max-width: 900px) and (orientation: landscape) {
   .app-shell {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 1fr;
     grid-template-rows: 1fr;
-    gap: 8px;
     padding: 8px;
   }
 
   .game-stage {
-    width: min(calc(100vw - 116px), calc((100svh - 16px) * 1.6));
-    height: min(calc(100svh - 16px), calc((100vw - 116px) / 1.6));
-    justify-self: end;
-  }
-
-  .action-bar {
-    position: static;
-    display: grid;
-    grid-template-columns: 1fr;
-    width: 92px;
-    gap: 6px;
-    align-self: center;
-    justify-self: start;
-    transform: none;
+    width: min(calc(100vw - 16px), calc((100svh - 16px) * 1.6));
+    height: min(calc(100svh - 16px), calc((100vw - 16px) / 1.6));
   }
 
   .mode-select-shell {
@@ -544,12 +547,6 @@ button.compact {
 
   .mode-select-shell select {
     max-width: 132px;
-  }
-
-  .action-bar button {
-    padding: 7px 6px;
-    font-size: 0.68rem;
-    white-space: normal;
   }
 
   .status-strip {

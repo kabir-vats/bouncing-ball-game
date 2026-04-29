@@ -18,7 +18,7 @@ import {
   simulateTrajectory,
 } from './game'
 
-type GameMode = 'classic' | 'one-bounce'
+type GameMode = 'classic' | 'one-bounce' | 'endless'
 type Phase =
   | 'preview'
   | 'guessing'
@@ -27,6 +27,7 @@ type Phase =
   | 'ready'
   | 'opening'
   | 'turn-reveal'
+  | 'end-ripple'
   | 'score-replay'
   | 'finished'
 type TurnResult = {
@@ -41,27 +42,37 @@ type LabeledTurnResult = TurnResult & {
 }
 type LabeledPoint = Point & {
   label?: number
+  tone?: GuessTone
 }
 type LabeledBounce = Bounce & {
   label?: number
 }
+type GuessTone = 'tentative' | 'miss' | 'okay' | 'great'
 
 const replayDuration = 7.2
 const boardAccent = '#67e8f9'
 const rippleSettleDuration = 2.45
 const defaultTurnCount = 5
 const maximumTurnCount = 12
-const defaultGuessSeconds = 10
+const defaultGuessSeconds = 5
+const endlessStartSeconds = 5
+const endlessMinimumSeconds = 2
+const endlessTimerDecay = 0.5
+const endlessGenerationBounces = 18
+const endlessLives = 3
+const finalLoopDuration = 180
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const animationRef = useRef<number | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const lastSoundBounceRef = useRef(-1)
+  const lastSoundTimeRef = useRef(0)
   const replayStartedAt = useRef<number | null>(null)
   const stepAnimationStartedAt = useRef<number | null>(null)
   const stepAnimationFromTime = useRef(0)
   const stepAnimationToTime = useRef(0)
+  const finishedLoopStartTime = useRef(0)
   const guessTimerStartedAt = useRef<number | null>(null)
   const activeGuessRef = useRef<Point | null>(null)
   const [currentScene, setCurrentScene] = useState(scene)
@@ -84,7 +95,11 @@ function App() {
   const [helpOpen, setHelpOpen] = useState(false)
   const [renderRevision, setRenderRevision] = useState(0)
 
-  const simulation = useMemo(() => simulateTrajectory(currentScene), [currentScene])
+  const isPredictionModeActive = isPredictionMode(mode)
+  const simulation = useMemo(
+    () => simulateTrajectory(currentScene, isPredictionModeActive ? finalLoopDuration : 10),
+    [currentScene, isPredictionModeActive],
+  )
   const openingBounceIndex = useMemo(
     () => Math.max(0, simulation.bounces.findIndex((bounce) => bounce.time > observeDuration)),
     [simulation.bounces],
@@ -95,17 +110,22 @@ function App() {
   )
   const oneBounceTarget = simulation.bounces[pauseBounceIndex + 1]
   const oneBouncePauseTime = simulation.bounces[pauseBounceIndex]?.time ?? 0
-  const oneBounceScore = turnResults.reduce((total, result) => total + result.points, 0)
+  const finalPredictionTarget = turnResults[turnResults.length - 1]?.target
+  const currentTurnSeconds = getTurnSeconds(mode, turnIndex, guessSeconds)
+  const oneBounceScore = mode === 'endless' ? getEndlessScore(turnResults) : turnResults.reduce((total, result) => total + result.points, 0)
+  const endlessMisses = getEndlessMisses(turnResults)
   const oneBounceDisplayScore =
-    mode === 'one-bounce' && phase === 'score-replay'
-      ? getAnimatedReplayScore(turnResults, stepTime)
+    isPredictionModeActive && phase === 'score-replay'
+      ? getAnimatedReplayScore(turnResults, stepTime, mode)
       : oneBounceScore
   const visibleScoreResults = getVisibleScoreResults(turnResults, phase, stepTime)
-  const oneBounceMaxScore = turnCount * 100
+  const oneBounceMaxScore = mode === 'endless' ? null : turnCount * 100
   const finalTarget = targetBounces[targetBounces.length - 1]
   const revealedTime =
     mode === 'one-bounce'
-      ? getOneBounceVisibleTime(phase, stepTime, oneBouncePauseTime)
+      ? getOneBounceVisibleTime(phase, stepTime, oneBouncePauseTime, finalPredictionTarget?.time)
+      : mode === 'endless'
+        ? getOneBounceVisibleTime(phase, stepTime, oneBouncePauseTime, finalPredictionTarget?.time)
       : phase === 'preview'
         ? previewTime
         : phase === 'replay' || phase === 'scored'
@@ -114,51 +134,58 @@ function App() {
   const rippleAge =
     mode === 'classic' && (phase === 'replay' || phase === 'scored') && finalTarget && replayTime >= finalTarget.time
       ? replayTime - finalTarget.time
+      : isPredictionModeActive && phase === 'end-ripple' && finalPredictionTarget
+        ? Math.max(0, stepTime - finalPredictionTarget.time)
       : null
   const score = mode === 'classic' && phase === 'scored' ? getTotalScore(guesses, targetBounces) : null
   const scoringRows = mode === 'classic' && phase === 'scored' ? scoreGuesses(guesses, targetBounces) : []
-  const maxScore = mode === 'one-bounce' ? oneBounceMaxScore : targetBounces.length * 100
-  const displayScore = mode === 'one-bounce' ? oneBounceDisplayScore : score
+  const maxScore = isPredictionModeActive ? oneBounceMaxScore : targetBounces.length * 100
+  const displayScore = isPredictionModeActive ? oneBounceDisplayScore : score
   const visibleGuesses =
-    mode === 'one-bounce' ? getOneBounceGuesses(turnResults, activeGuess, phase) : guesses
-  const visibleTargets = mode === 'one-bounce' ? getOneBounceTargets(turnResults, phase, revealedTime) : targetBounces
+    isPredictionModeActive ? getOneBounceGuesses(turnResults, activeGuess, phase, revealedTime) : guesses
+  const visibleTargets = isPredictionModeActive ? getOneBounceTargets(turnResults, phase, revealedTime) : targetBounces
   const timerProgress =
-    mode === 'one-bounce' && phase === 'guessing' ? Math.max(0, Math.min(1, timerRemaining / guessSeconds)) : null
+    isPredictionModeActive && phase === 'guessing' ? Math.max(0, Math.min(1, timerRemaining / currentTurnSeconds)) : null
 
-  const resetRound = useCallback(() => {
+  const resetRound = useCallback((nextGuessSeconds = guessSeconds) => {
     replayStartedAt.current = null
     stepAnimationStartedAt.current = null
     guessTimerStartedAt.current = null
     activeGuessRef.current = null
+    finishedLoopStartTime.current = 0
+    lastSoundBounceRef.current = -1
+    lastSoundTimeRef.current = 0
     setActiveGuess(null)
     setTurnIndex(0)
     setTurnResults([])
-    setTimerRemaining(guessSeconds)
+    setTimerRemaining(getTurnSeconds(mode, 0, nextGuessSeconds))
     setPauseBounceIndex(openingBounceIndex)
     setStepTime(0)
     setGuesses([])
     setReplayTime(0)
     setPreviewTime(0)
-    setPhase(mode === 'one-bounce' ? 'ready' : 'preview')
+    setPhase(isPredictionMode(mode) ? 'ready' : 'preview')
   }, [guessSeconds, mode, openingBounceIndex])
 
-  const randomizeRound = useCallback(() => {
+  const startNewRound = useCallback(() => {
     replayStartedAt.current = null
     stepAnimationStartedAt.current = null
     guessTimerStartedAt.current = null
     activeGuessRef.current = null
-    const requiredBounces = mode === 'one-bounce' ? turnCount + 1 : bounceLimit
-    setCurrentScene(generateRandomScene(generatorConfig, requiredBounces))
+    finishedLoopStartTime.current = 0
+    lastSoundBounceRef.current = -1
+    lastSoundTimeRef.current = 0
+    setCurrentScene(generateRandomScene(generatorConfig, getRequiredBounces(mode, bounceLimit, turnCount)))
     setActiveGuess(null)
     setTurnIndex(0)
     setTurnResults([])
-    setTimerRemaining(guessSeconds)
+    setTimerRemaining(getTurnSeconds(mode, 0, guessSeconds))
     setPauseBounceIndex(0)
     setStepTime(0)
     setGuesses([])
     setReplayTime(0)
     setPreviewTime(0)
-    setPhase(mode === 'one-bounce' ? 'ready' : 'preview')
+    setPhase(isPredictionMode(mode) ? 'ready' : 'preview')
   }, [bounceLimit, generatorConfig, guessSeconds, mode, turnCount])
 
   const watchOneBounceReplay = useCallback(() => {
@@ -173,12 +200,36 @@ function App() {
     setPhase('score-replay')
   }, [turnResults])
 
-  const updateGeneratorConfig = useCallback((key: keyof GeneratorConfig, value: number) => {
-    setGeneratorConfig((current) => ({
-      ...current,
-      [key]: value,
-    }))
-  }, [])
+  const updateGeneratorConfig = useCallback(
+    (key: keyof GeneratorConfig, value: number) => {
+      const nextConfig = {
+        ...generatorConfig,
+        [key]: value,
+      }
+      const requiredBounces = getRequiredBounces(mode, bounceLimit, turnCount)
+
+      replayStartedAt.current = null
+      stepAnimationStartedAt.current = null
+      guessTimerStartedAt.current = null
+      activeGuessRef.current = null
+      finishedLoopStartTime.current = 0
+      lastSoundBounceRef.current = -1
+      lastSoundTimeRef.current = 0
+      setGeneratorConfig(nextConfig)
+      setCurrentScene(generateRandomScene(nextConfig, requiredBounces))
+      setActiveGuess(null)
+      setTurnIndex(0)
+      setTurnResults([])
+      setTimerRemaining(getTurnSeconds(mode, 0, guessSeconds))
+      setPauseBounceIndex(0)
+      setStepTime(0)
+      setGuesses([])
+      setReplayTime(0)
+      setPreviewTime(0)
+      setPhase(isPredictionMode(mode) ? 'ready' : 'preview')
+    },
+    [bounceLimit, generatorConfig, guessSeconds, mode, turnCount],
+  )
 
   const enableAudio = useCallback(() => {
     audioContextRef.current ??= new AudioContext()
@@ -188,33 +239,6 @@ function App() {
     }
   }, [])
 
-  const lockIn = useCallback(() => {
-    if (mode === 'one-bounce') {
-      if (phase !== 'guessing' || !activeGuess || !oneBounceTarget) {
-        return
-      }
-
-      setTurnResults((current) => [...current, scoreOneBounceTurn(activeGuess, oneBounceTarget, false)])
-      activeGuessRef.current = null
-      setActiveGuess(null)
-      stepAnimationStartedAt.current = null
-      stepAnimationFromTime.current = oneBouncePauseTime
-      stepAnimationToTime.current = oneBounceTarget.time
-      guessTimerStartedAt.current = null
-      setStepTime(oneBouncePauseTime)
-      setPhase('turn-reveal')
-      return
-    }
-
-    if (guesses.length === 0) {
-      return
-    }
-
-    replayStartedAt.current = null
-    setReplayTime(0)
-    setPhase('replay')
-  }, [activeGuess, guesses.length, mode, oneBouncePauseTime, oneBounceTarget, phase])
-
   const startOneBounceGame = useCallback(() => {
     if (!simulation.bounces[openingBounceIndex]) {
       return
@@ -222,20 +246,22 @@ function App() {
 
     enableAudio()
     activeGuessRef.current = null
+    lastSoundBounceRef.current = -1
+    lastSoundTimeRef.current = 0
     setActiveGuess(null)
     setTurnIndex(0)
     setTurnResults([])
-    setTimerRemaining(guessSeconds)
+    setTimerRemaining(getTurnSeconds(mode, 0, guessSeconds))
     setPauseBounceIndex(openingBounceIndex)
     stepAnimationStartedAt.current = null
     stepAnimationFromTime.current = 0
     stepAnimationToTime.current = simulation.bounces[openingBounceIndex].time
     setStepTime(0)
     setPhase('opening')
-  }, [enableAudio, guessSeconds, openingBounceIndex, simulation.bounces])
+  }, [enableAudio, guessSeconds, mode, openingBounceIndex, simulation.bounces])
 
   const finishOneBounceTimeout = useCallback(() => {
-    if (mode !== 'one-bounce' || phase !== 'guessing' || !oneBounceTarget) {
+    if (!isPredictionMode(mode) || phase !== 'guessing' || !oneBounceTarget) {
       return
     }
 
@@ -272,18 +298,22 @@ function App() {
       stepAnimationStartedAt.current = null
       guessTimerStartedAt.current = null
       activeGuessRef.current = null
+      finishedLoopStartTime.current = 0
+      lastSoundBounceRef.current = -1
+      lastSoundTimeRef.current = 0
+      setCurrentScene(generateRandomScene(generatorConfig, getRequiredBounces(nextMode, bounceLimit, turnCount)))
       setActiveGuess(null)
       setTurnIndex(0)
       setTurnResults([])
-      setTimerRemaining(guessSeconds)
-      setPauseBounceIndex(openingBounceIndex)
+      setTimerRemaining(getTurnSeconds(nextMode, 0, guessSeconds))
+      setPauseBounceIndex(0)
       setStepTime(0)
       setGuesses([])
       setReplayTime(0)
       setPreviewTime(0)
-      setPhase(nextMode === 'one-bounce' ? 'ready' : 'preview')
+      setPhase(isPredictionMode(nextMode) ? 'ready' : 'preview')
     },
-    [guessSeconds, openingBounceIndex],
+    [bounceLimit, generatorConfig, guessSeconds, turnCount],
   )
 
   const handleCanvasClick = useCallback(
@@ -297,7 +327,7 @@ function App() {
       const x = ((event.clientX - rect.left) / rect.width) * currentScene.width
       const y = ((event.clientY - rect.top) / rect.height) * currentScene.height
 
-      if (mode === 'one-bounce') {
+      if (isPredictionMode(mode)) {
         const nextGuess = { x, y }
         activeGuessRef.current = nextGuess
         setActiveGuess(nextGuess)
@@ -309,19 +339,14 @@ function App() {
       }
 
       setGuesses((current) => [...current, { x, y }])
+      if (guesses.length + 1 >= targetBounces.length) {
+        replayStartedAt.current = null
+        setReplayTime(0)
+        setPhase('replay')
+      }
     },
     [currentScene.height, currentScene.width, guesses.length, mode, phase, targetBounces.length],
   )
-
-  const undoGuess = useCallback(() => {
-    if (mode === 'one-bounce') {
-      activeGuessRef.current = null
-      setActiveGuess(null)
-      return
-    }
-
-    setGuesses((current) => current.slice(0, -1))
-  }, [mode])
 
   useEffect(() => {
     activeGuessRef.current = activeGuess
@@ -385,15 +410,17 @@ function App() {
       animationRef.current = requestAnimationFrame(tick)
     }
 
-    if (mode === 'one-bounce' && (phase === 'opening' || phase === 'turn-reveal' || phase === 'score-replay')) {
-      lastSoundBounceRef.current = phase === 'opening' || phase === 'score-replay' ? -1 : pauseBounceIndex
+    if (isPredictionMode(mode) && (phase === 'opening' || phase === 'turn-reveal' || phase === 'end-ripple' || phase === 'score-replay')) {
+      lastSoundBounceRef.current =
+        phase === 'opening' || phase === 'score-replay' ? -1 : phase === 'end-ripple' ? pauseBounceIndex + 1 : pauseBounceIndex
 
       const tick = (now: number) => {
         stepAnimationStartedAt.current ??= now
         const elapsed = (now - stepAnimationStartedAt.current) / 1000
         const fromTime = stepAnimationFromTime.current
         const toTime = stepAnimationToTime.current
-        const nextTime = Math.min(toTime, fromTime + elapsed)
+        const speedMultiplier = phase === 'turn-reveal' ? getRevealSpeedMultiplier(mode, turnIndex) : 1
+        const nextTime = Math.min(toTime, fromTime + elapsed * speedMultiplier)
         setStepTime(nextTime)
 
         if (nextTime >= toTime) {
@@ -401,28 +428,45 @@ function App() {
 
           if (phase === 'score-replay') {
             setStepTime(toTime)
+            finishedLoopStartTime.current = toTime
             setPhase('finished')
+          } else if (phase === 'end-ripple') {
+            const replayEndTime = turnResults[turnResults.length - 1]?.target.time + 0.8 || toTime
+            stepAnimationFromTime.current = 0
+            stepAnimationToTime.current = replayEndTime
+            setStepTime(0)
+            setPhase('score-replay')
           } else if (phase === 'opening') {
             setPauseBounceIndex(openingBounceIndex)
-            setTimerRemaining(guessSeconds)
+            setTimerRemaining(getTurnSeconds(mode, 0, guessSeconds))
             guessTimerStartedAt.current = null
             setPhase('guessing')
           } else {
             const nextPauseIndex = pauseBounceIndex + 1
             const completedTurns = turnIndex + 1
+            const latestResult = turnResults[turnResults.length - 1]
             setPauseBounceIndex(nextPauseIndex)
             activeGuessRef.current = null
             setActiveGuess(null)
 
-            if (completedTurns >= turnCount || !simulation.bounces[nextPauseIndex + 1]) {
+            if (
+              shouldEndPredictionRound(
+                mode,
+                completedTurns,
+                turnCount,
+                turnResults,
+                Boolean(simulation.bounces[nextPauseIndex + 1]),
+              )
+            ) {
+              const rippleStartTime = latestResult?.target.time ?? nextTime
               stepAnimationStartedAt.current = null
-              stepAnimationFromTime.current = 0
-              stepAnimationToTime.current = turnResults[turnResults.length - 1]?.target.time + 0.8 || nextTime + 0.8
-              setStepTime(0)
-              setPhase('score-replay')
+              stepAnimationFromTime.current = rippleStartTime
+              stepAnimationToTime.current = rippleStartTime + rippleSettleDuration
+              setStepTime(rippleStartTime)
+              setPhase('end-ripple')
             } else {
               setTurnIndex(completedTurns)
-              setTimerRemaining(guessSeconds)
+              setTimerRemaining(getTurnSeconds(mode, completedTurns, guessSeconds))
               guessTimerStartedAt.current = null
               setPhase('guessing')
             }
@@ -430,6 +474,19 @@ function App() {
           return
         }
 
+        animationRef.current = requestAnimationFrame(tick)
+      }
+
+      animationRef.current = requestAnimationFrame(tick)
+    }
+
+    if (isPredictionMode(mode) && phase === 'finished') {
+      const simulationDuration = simulation.samples[simulation.samples.length - 1]?.time ?? 10
+
+      const tick = (now: number) => {
+        stepAnimationStartedAt.current ??= now
+        const elapsed = (now - stepAnimationStartedAt.current) / 1000
+        setStepTime((finishedLoopStartTime.current + elapsed) % simulationDuration)
         animationRef.current = requestAnimationFrame(tick)
       }
 
@@ -448,6 +505,7 @@ function App() {
     pauseBounceIndex,
     phase,
     simulation.bounces,
+    simulation.samples,
     targetBounces,
     turnCount,
     turnIndex,
@@ -460,10 +518,17 @@ function App() {
       phase !== 'replay' &&
       phase !== 'opening' &&
       phase !== 'turn-reveal' &&
-      phase !== 'score-replay'
+      phase !== 'end-ripple' &&
+      phase !== 'score-replay' &&
+      phase !== 'finished'
     ) {
       return
     }
+
+    if (revealedTime < lastSoundTimeRef.current) {
+      lastSoundBounceRef.current = -1
+    }
+    lastSoundTimeRef.current = revealedTime
 
     const currentBounceIndex = simulation.bounces.findLastIndex((bounce) => bounce.time <= revealedTime)
     if (currentBounceIndex > lastSoundBounceRef.current) {
@@ -477,7 +542,7 @@ function App() {
   }, [phase, revealedTime, simulation.bounces])
 
   useEffect(() => {
-    if (mode !== 'one-bounce' || phase !== 'guessing') {
+    if (!isPredictionMode(mode) || phase !== 'guessing') {
       return
     }
 
@@ -486,7 +551,7 @@ function App() {
 
     const tick = (now: number) => {
       const startedAt = guessTimerStartedAt.current ?? now
-      const remaining = Math.max(0, guessSeconds - (now - startedAt) / 1000)
+      const remaining = Math.max(0, currentTurnSeconds - (now - startedAt) / 1000)
       setTimerRemaining(remaining)
 
       if (remaining <= 0) {
@@ -499,7 +564,7 @@ function App() {
 
     timerFrame = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(timerFrame)
-  }, [finishOneBounceTimeout, guessSeconds, mode, phase, turnIndex])
+  }, [currentTurnSeconds, finishOneBounceTimeout, mode, phase, turnIndex])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -555,12 +620,16 @@ function App() {
         <div className="status-strip" aria-live="polite">
           <span>{getPhaseLabel(phase)}</span>
           <strong>
-            {mode === 'one-bounce' ? `Turn ${Math.min(turnIndex + 1, turnCount)}/${turnCount}` : `${guesses.length}/${targetBounces.length}`}
+            {mode === 'one-bounce'
+                ? `Turn ${Math.min(turnIndex + 1, turnCount)}/${turnCount}`
+                : mode === 'endless'
+                  ? `Lives ${Math.max(0, endlessLives - endlessMisses)}/${endlessLives}`
+                  : `${guesses.length}/${targetBounces.length}`}
           </strong>
-          {displayScore !== null && <span>{displayScore}/{maxScore}</span>}
+          {displayScore !== null && <span>{formatScore(displayScore, maxScore)}</span>}
         </div>
 
-        {mode === 'one-bounce' && phase === 'ready' && (
+        {isPredictionModeActive && phase === 'ready' && (
           <div className="play-overlay">
             <button type="button" onClick={startOneBounceGame}>
               Play
@@ -573,45 +642,21 @@ function App() {
           <select
             value={mode}
             onChange={handleModeChange}
-            disabled={phase === 'replay' || phase === 'opening' || phase === 'turn-reveal' || phase === 'score-replay'}
+            disabled={
+              phase === 'replay' ||
+              phase === 'opening' ||
+              phase === 'turn-reveal' ||
+              phase === 'end-ripple' ||
+              phase === 'score-replay'
+            }
           >
             <option value="one-bounce">One Bounce Ahead</option>
+            <option value="endless">Endless</option>
             <option value="classic">Classic</option>
           </select>
         </label>
 
-        {!(mode === 'one-bounce' && (phase === 'score-replay' || phase === 'finished')) && (
-          <div className="action-bar">
-            <button
-              type="button"
-              onClick={() => {
-                enableAudio()
-                lockIn()
-              }}
-              disabled={phase !== 'guessing' || (mode === 'one-bounce' ? !activeGuess : guesses.length === 0)}
-            >
-              {mode === 'one-bounce' ? 'Lock guess' : 'Lock guesses'}
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              onClick={undoGuess}
-              disabled={phase !== 'guessing' || (mode === 'one-bounce' ? !activeGuess : guesses.length === 0)}
-            >
-              Undo
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              onClick={randomizeRound}
-              disabled={phase === 'replay' || phase === 'opening' || phase === 'turn-reveal' || phase === 'score-replay'}
-            >
-              New Round
-            </button>
-          </div>
-        )}
-
-        {mode === 'one-bounce' && phase === 'score-replay' && (
+        {isPredictionModeActive && phase === 'score-replay' && (
           <ScorePanel
             label="scoring replay"
             maxScore={oneBounceMaxScore}
@@ -620,16 +665,16 @@ function App() {
           />
         )}
 
-        {mode === 'one-bounce' && phase === 'finished' && (
+        {isPredictionModeActive && phase === 'finished' && (
           <div className="final-score-menu">
             <ScorePanel
-              label="final score"
+              label={mode === 'endless' ? 'final streak' : 'final score'}
               maxScore={oneBounceMaxScore}
               score={oneBounceDisplayScore}
               results={visibleScoreResults}
             />
             <div className="score-actions">
-              <button type="button" onClick={randomizeRound}>
+              <button type="button" onClick={startNewRound}>
                 New Round
               </button>
               <button type="button" className="secondary" onClick={watchOneBounceReplay}>
@@ -651,7 +696,7 @@ function App() {
           </button>
           {helpOpen && (
             <div className="help-popover">
-              Watch the ball and predict its next {mode === 'one-bounce' ? 1 : targetBounces.length} bounces.
+              Watch the ball and predict its next {isPredictionModeActive ? 1 : targetBounces.length} bounces.
               Customize your game in settings. Beta / demo version.
             </div>
           )}
@@ -680,9 +725,13 @@ function App() {
               </div>
 
               <div className="meter">
-                <span>{mode === 'one-bounce' ? 'Turn' : 'Markers'}</span>
+                <span>{mode === 'one-bounce' ? 'Turn' : mode === 'endless' ? 'Streak' : 'Markers'}</span>
                 <strong>
-                  {mode === 'one-bounce' ? `${Math.min(turnIndex + 1, turnCount)}/${turnCount}` : `${guesses.length}/${targetBounces.length}`}
+                  {mode === 'one-bounce'
+                    ? `${Math.min(turnIndex + 1, turnCount)}/${turnCount}`
+                    : mode === 'endless'
+                      ? `${Math.max(0, endlessLives - endlessMisses)}/${endlessLives}`
+                      : `${guesses.length}/${targetBounces.length}`}
                 </strong>
               </div>
 
@@ -697,7 +746,7 @@ function App() {
                     ))}
                   </select>
                 </label>
-              ) : (
+              ) : mode === 'one-bounce' ? (
                 <div className="settings-grid">
                   <label className="select-field">
                     <span>Turns</span>
@@ -707,7 +756,7 @@ function App() {
                         setTurnCount(Number(event.target.value))
                         resetRound()
                       }}
-                      disabled={phase === 'opening' || phase === 'turn-reveal'}
+                      disabled={phase === 'opening' || phase === 'turn-reveal' || phase === 'end-ripple'}
                     >
                       {Array.from({ length: maximumTurnCount }, (_, index) => index + 1).map((count) => (
                         <option key={count} value={count}>
@@ -721,19 +770,26 @@ function App() {
                     <select
                       value={guessSeconds}
                       onChange={(event) => {
-                        setGuessSeconds(Number(event.target.value))
-                        setTimerRemaining(Number(event.target.value))
-                        resetRound()
+                        const nextSeconds = Number(event.target.value)
+                        setGuessSeconds(nextSeconds)
+                        setTimerRemaining(nextSeconds)
+                        resetRound(nextSeconds)
                       }}
-                      disabled={phase === 'opening' || phase === 'turn-reveal'}
+                      disabled={phase === 'opening' || phase === 'turn-reveal' || phase === 'end-ripple'}
                     >
-                      {[3, 5, 8, 10, 12, 15, 20, 30].map((seconds) => (
+                      {[1, 2, 3, 4, 5].map((seconds) => (
                         <option key={seconds} value={seconds}>
                           {seconds}s
                         </option>
                       ))}
                     </select>
                   </label>
+                </div>
+              ) : (
+                <div className="score-card">
+                  <p className="eyebrow">endless rules</p>
+                  <span>Keep predicting one bounce ahead. Three misses ends the run.</span>
+                  <span>Timer decays from {endlessStartSeconds}s to {endlessMinimumSeconds}s.</span>
                 </div>
               )}
 
@@ -799,15 +855,15 @@ function App() {
 
               <p className="hint">{getHint(phase, guesses.length, targetBounces.length)}</p>
 
-              {mode === 'one-bounce' && (
+              {isPredictionModeActive && (
                 <div className="score-card">
-                  <p className="eyebrow">score</p>
+                  <p className="eyebrow">{mode === 'endless' ? 'streak' : 'score'}</p>
                   <strong>
-                    {oneBounceScore}/{oneBounceMaxScore}
+                    {formatScore(oneBounceScore, oneBounceMaxScore)}
                   </strong>
                   {turnResults.map((result, index) => (
-                    <span key={`${result.target.time}-${index}`}>
-                      Turn {index + 1}: {result.timedOut ? 'timeout' : `${Math.round(result.distance)}px`} · {result.points} pts
+                    <span className={`score-line ${getScoreTone(result.points)}`} key={`${result.target.time}-${index}`}>
+                      Bounce {index + 1}: {result.points > 0 ? `${result.points} pts` : 'miss'}
                     </span>
                   ))}
                 </div>
@@ -820,9 +876,8 @@ function App() {
                     {score}/{maxScore}
                   </strong>
                   {scoringRows.map((row) => (
-                    <span key={row.index}>
-                      Bounce {row.index + 1}:{' '}
-                      {Number.isFinite(row.distance) ? `${Math.round(row.distance)}px` : 'miss'} · {row.points} pts
+                    <span className={`score-line ${getScoreTone(row.points)}`} key={row.index}>
+                      Bounce {row.index + 1}: {row.points > 0 ? `${row.points} pts` : 'miss'}
                     </span>
                   ))}
                 </div>
@@ -875,7 +930,14 @@ function drawScene(context: CanvasRenderingContext2D, options: DrawOptions) {
     drawRipple(context, gameScene, targetBounces[targetBounces.length - 1], rippleAge)
   }
 
-  if (phase === 'scored' || phase === 'replay' || phase === 'turn-reveal' || phase === 'score-replay' || phase === 'finished') {
+  if (
+    phase === 'scored' ||
+    phase === 'replay' ||
+    phase === 'turn-reveal' ||
+    phase === 'end-ripple' ||
+    phase === 'score-replay' ||
+    phase === 'finished'
+  ) {
     drawTargets(context, targetBounces.filter((bounce) => bounce.time <= time || phase === 'scored'))
   }
 
@@ -1050,13 +1112,14 @@ function drawBall(
 
 function drawGuesses(context: CanvasRenderingContext2D, guesses: LabeledPoint[]) {
   guesses.forEach((guess, index) => {
+    const colors = getGuessColors(guess.tone)
     context.beginPath()
     context.arc(guess.x, guess.y, 15, 0, Math.PI * 2)
-    context.strokeStyle = '#facc15'
+    context.strokeStyle = colors.stroke
     context.lineWidth = 3
     context.stroke()
 
-    context.fillStyle = '#fef3c7'
+    context.fillStyle = colors.text
     context.font = '700 14px Inter, system-ui, sans-serif'
     context.textAlign = 'center'
     context.textBaseline = 'middle'
@@ -1082,7 +1145,7 @@ function drawTargets(context: CanvasRenderingContext2D, bounces: LabeledBounce[]
 
 type ScorePanelProps = {
   label: string
-  maxScore: number
+  maxScore: number | null
   score: number
   results: LabeledTurnResult[]
 }
@@ -1092,12 +1155,12 @@ function ScorePanel({ label, maxScore, score, results }: ScorePanelProps) {
     <div className="score-panel">
       <p className="eyebrow">{label}</p>
       <strong>
-        {score}/{maxScore}
+        {formatScore(score, maxScore)}
       </strong>
       <div className="score-breakdown">
         {results.map((result, index) => (
-          <span key={`${result.target.time}-${index}`}>
-            Bounce {result.label}: {result.guess ? `${Math.round(result.distance)}px` : 'miss'} · {result.points}
+          <span className={`score-line ${getScoreTone(result.points)}`} key={`${result.target.time}-${index}`}>
+            Bounce {result.label}: {result.points > 0 ? `${result.points} pts` : 'miss'}
           </span>
         ))}
       </div>
@@ -1187,6 +1250,7 @@ function getPhaseLabel(phase: Phase) {
   if (phase === 'ready') return 'ready'
   if (phase === 'opening') return 'watching'
   if (phase === 'turn-reveal') return 'revealing'
+  if (phase === 'end-ripple') return 'impact'
   if (phase === 'score-replay') return 'scoring'
   if (phase === 'finished') return 'results'
   if (phase === 'preview') return 'watching'
@@ -1197,14 +1261,18 @@ function getPhaseLabel(phase: Phase) {
 
 function getHint(phase: Phase, guessCount: number, targetCount: number) {
   if (phase === 'preview') return 'Track the angle, speed, and likely collision surfaces.'
-  if (phase === 'guessing') return `Click the board to place marker ${Math.min(guessCount + 1, targetCount)}, or lock in early.`
+  if (phase === 'guessing') return `Click the board to place marker ${Math.min(guessCount + 1, targetCount)}. Click again to move it before time runs out.`
   if (phase === 'replay') return 'Actual bounce points appear in green as the replay reaches them.'
   return 'Yellow is your prediction. Green is the actual bounce point.'
 }
 
-function getOneBounceVisibleTime(phase: Phase, stepTime: number, pauseTime: number) {
+function getOneBounceVisibleTime(phase: Phase, stepTime: number, pauseTime: number, finalTargetTime?: number) {
   if (phase === 'ready') {
     return 0
+  }
+
+  if (phase === 'end-ripple') {
+    return finalTargetTime ?? pauseTime
   }
 
   if (phase === 'opening' || phase === 'turn-reveal' || phase === 'score-replay' || phase === 'finished') {
@@ -1235,14 +1303,19 @@ function scoreOneBounceTurn(guess: Point | null, target: Bounce, timedOut: boole
   }
 }
 
-function getOneBounceGuesses(results: TurnResult[], activeGuess: Point | null, phase: Phase) {
-  const resultGuesses = results.flatMap((result, index) =>
-    result.guess ? [{ ...result.guess, label: index + 1 }] : [],
-  )
+function getOneBounceGuesses(results: TurnResult[], activeGuess: Point | null, phase: Phase, visibleTime: number) {
+  const resultGuesses = results.flatMap((result, index) => {
+    if (!result.guess) {
+      return []
+    }
+
+    const revealed = phase === 'score-replay' || phase === 'finished' || result.target.time <= visibleTime
+    return [{ ...result.guess, label: index + 1, tone: revealed ? getGuessTone(result.points) : 'tentative' }]
+  })
   if (phase === 'score-replay' || phase === 'finished') {
     return resultGuesses
   }
-  return activeGuess ? [...resultGuesses, { ...activeGuess, label: results.length + 1 }] : resultGuesses
+  return activeGuess ? [...resultGuesses, { ...activeGuess, label: results.length + 1, tone: 'tentative' }] : resultGuesses
 }
 
 function getOneBounceTargets(results: TurnResult[], phase: Phase, visibleTime: number) {
@@ -1261,7 +1334,7 @@ function getVisibleScoreResults(results: TurnResult[], phase: Phase, visibleTime
     .filter((result) => phase !== 'score-replay' || result.target.time <= visibleTime)
 }
 
-function getAnimatedReplayScore(results: TurnResult[], replayTime: number) {
+function getAnimatedReplayScore(results: TurnResult[], replayTime: number, mode: GameMode) {
   return results.reduce((total, result) => {
     if (replayTime < result.target.time) {
       return total
@@ -1269,8 +1342,112 @@ function getAnimatedReplayScore(results: TurnResult[], replayTime: number) {
 
     const countUpProgress = Math.min(1, (replayTime - result.target.time) / 0.45)
     const easedProgress = 1 - Math.pow(1 - countUpProgress, 3)
-    return total + Math.round(result.points * easedProgress)
+    const value = mode === 'endless' ? (result.points > 0 ? 1 : 0) : result.points
+    return total + Math.round(value * easedProgress)
   }, 0)
+}
+
+function getGuessTone(points: number): GuessTone {
+  if (points <= 0) return 'miss'
+  if (points >= 85) return 'great'
+  return 'okay'
+}
+
+function getGuessColors(tone: GuessTone = 'okay') {
+  if (tone === 'tentative') {
+    return {
+      stroke: '#94a3b8',
+      text: '#e2e8f0',
+    }
+  }
+
+  if (tone === 'miss') {
+    return {
+      stroke: '#fb7185',
+      text: '#ffe4e6',
+    }
+  }
+
+  if (tone === 'great') {
+    return {
+      stroke: '#67e8f9',
+      text: '#cffafe',
+    }
+  }
+
+  return {
+    stroke: '#facc15',
+    text: '#fef3c7',
+  }
+}
+
+function isPredictionMode(mode: GameMode) {
+  return mode === 'one-bounce' || mode === 'endless'
+}
+
+function getRequiredBounces(mode: GameMode, bounceLimit: number, turnCount: number) {
+  if (mode === 'endless') {
+    return endlessGenerationBounces
+  }
+
+  if (mode === 'one-bounce') {
+    return turnCount + 1
+  }
+
+  return bounceLimit
+}
+
+function getTurnSeconds(mode: GameMode, turnIndex: number, guessSeconds: number) {
+  if (mode !== 'endless') {
+    return guessSeconds
+  }
+
+  return Math.max(endlessMinimumSeconds, endlessStartSeconds - turnIndex * endlessTimerDecay)
+}
+
+function getRevealSpeedMultiplier(mode: GameMode, turnIndex: number) {
+  if (mode !== 'endless') {
+    return 1
+  }
+
+  return 1 + turnIndex * 0.1
+}
+
+function shouldEndPredictionRound(
+  mode: GameMode,
+  completedTurns: number,
+  turnCount: number,
+  results: TurnResult[],
+  hasNextBounce: boolean,
+) {
+  if (!hasNextBounce) {
+    return true
+  }
+
+  if (mode === 'endless') {
+    return getEndlessMisses(results) >= endlessLives
+  }
+
+  return completedTurns >= turnCount
+}
+
+function getEndlessScore(results: TurnResult[]) {
+  return results.filter((result) => result.points > 0).length
+}
+
+function getEndlessMisses(results: TurnResult[]) {
+  return results.filter((result) => result.points <= 0).length
+}
+
+function formatScore(score: number, maxScore: number | null) {
+  return maxScore === null ? String(score) : `${score}/${maxScore}`
+}
+
+function getScoreTone(points: number) {
+  if (points >= 85) return 'great'
+  if (points >= 60) return 'good'
+  if (points > 0) return 'okay'
+  return 'miss'
 }
 
 function getImpactAge(bounces: Bounce[], time: number) {
