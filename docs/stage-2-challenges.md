@@ -43,6 +43,15 @@ create table if not exists public.challenge_scores (
 
 create index if not exists challenge_scores_rank_idx
   on public.challenge_scores (challenge_slug, score desc, created_at asc);
+
+grant usage on schema public to service_role;
+grant all privileges on table public.challenges to service_role;
+grant all privileges on table public.challenge_scores to service_role;
+grant all privileges on all sequences in schema public to service_role;
+alter default privileges in schema public grant all privileges on tables to service_role;
+alter default privileges in schema public grant all privileges on sequences to service_role;
+
+notify pgrst, 'reload schema';
 ```
 
 ## Current Security Model
