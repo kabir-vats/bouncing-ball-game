@@ -17,6 +17,8 @@ export type CircleObstacle = {
 
 export type PolygonObstacle = {
   kind: 'platform' | 'triangle' | 'block'
+  cornerRadius: number
+  collisionPoints: Point[]
   points: Point[]
 }
 
@@ -309,30 +311,46 @@ function makeCircle(x: number, y: number, radius: number): CircleObstacle {
 }
 
 function makePlatform(x: number, y: number, length: number, angleDegrees: number): PolygonObstacle {
+  const width = Math.max(32, length)
+  const height = 16
+  const points = makeRotatedRectangle(x, y, width, height, angleDegrees)
+  const cornerRadius = height / 2
+
   return {
     kind: 'platform',
-    points: makeRotatedRectangle(x, y, Math.max(32, length), 16, angleDegrees),
+    cornerRadius,
+    collisionPoints: getRoundedPolygonPoints(points, cornerRadius, 5),
+    points,
   }
 }
 
 function makeBlock(x: number, y: number, size: number, angleDegrees: number): PolygonObstacle {
   const width = Math.max(22, size)
+  const points = makeRotatedRectangle(x, y, width, width * randomBlockAspect(angleDegrees), angleDegrees)
+  const cornerRadius = Math.min(14, width * 0.22)
+
   return {
     kind: 'block',
-    points: makeRotatedRectangle(x, y, width, width * randomBlockAspect(angleDegrees), angleDegrees),
+    cornerRadius,
+    collisionPoints: getRoundedPolygonPoints(points, cornerRadius, 5),
+    points,
   }
 }
 
 function makeTriangle(x: number, y: number, size: number, angleDegrees: number): PolygonObstacle {
   const radius = Math.max(24, size)
   const angle = degreesToRadians(angleDegrees)
+  const points = [0, 1, 2].map((index) => ({
+    x: x + Math.cos(angle + index * ((Math.PI * 2) / 3)) * radius,
+    y: y + Math.sin(angle + index * ((Math.PI * 2) / 3)) * radius,
+  }))
+  const cornerRadius = Math.min(18, radius * 0.18)
 
   return {
     kind: 'triangle',
-    points: [0, 1, 2].map((index) => ({
-      x: x + Math.cos(angle + index * ((Math.PI * 2) / 3)) * radius,
-      y: y + Math.sin(angle + index * ((Math.PI * 2) / 3)) * radius,
-    })),
+    cornerRadius,
+    collisionPoints: getRoundedPolygonPoints(points, cornerRadius, 7),
+    points,
   }
 }
 
@@ -358,6 +376,56 @@ function makeRotatedRectangle(
     x: x + point.x * cos - point.y * sin,
     y: y + point.x * sin + point.y * cos,
   }))
+}
+
+function getRoundedPolygonPoints(points: Point[], radius: number, curveSegments: number) {
+  if (points.length < 3 || radius <= 0) {
+    return points
+  }
+
+  const roundedPoints: Point[] = []
+
+  for (let index = 0; index < points.length; index += 1) {
+    const previous = points[(index + points.length - 1) % points.length]
+    const current = points[index]
+    const next = points[(index + 1) % points.length]
+    const previousLength = getDistance(current, previous)
+    const nextLength = getDistance(current, next)
+    const trim = Math.min(radius, previousLength * 0.5, nextLength * 0.5)
+    const start = getPointToward(current, previous, trim)
+    const end = getPointToward(current, next, trim)
+
+    roundedPoints.push(start)
+    for (let segment = 1; segment <= curveSegments; segment += 1) {
+      const progress = segment / curveSegments
+      roundedPoints.push(getQuadraticPoint(start, current, end, progress))
+    }
+  }
+
+  return roundedPoints
+}
+
+function getPointToward(from: Point, to: Point, distance: number) {
+  const totalDistance = getDistance(from, to)
+
+  if (totalDistance === 0) {
+    return from
+  }
+
+  const progress = distance / totalDistance
+  return {
+    x: from.x + (to.x - from.x) * progress,
+    y: from.y + (to.y - from.y) * progress,
+  }
+}
+
+function getQuadraticPoint(start: Point, control: Point, end: Point, progress: number) {
+  const inverse = 1 - progress
+
+  return {
+    x: inverse * inverse * start.x + 2 * inverse * progress * control.x + progress * progress * end.x,
+    y: inverse * inverse * start.y + 2 * inverse * progress * control.y + progress * progress * end.y,
+  }
 }
 
 function resolveWallCollision(ball: BallState, gameScene: GameScene) {
@@ -414,14 +482,15 @@ function resolveCircleCollision(ball: BallState, circle: CircleObstacle, radius:
 }
 
 function resolvePolygonCollision(ball: BallState, obstacle: PolygonObstacle, radius: number) {
-  const closest = getClosestPolygonPoint(ball, obstacle.points)
-  const inside = isPointInPolygon(ball, obstacle.points)
+  const polygon = obstacle.collisionPoints
+  const closest = getClosestPolygonPoint(ball, polygon)
+  const inside = isPointInPolygon(ball, polygon)
 
   if (!inside && closest.distance > radius) {
     return false
   }
 
-  const centroid = getCentroid(obstacle.points)
+  const centroid = getCentroid(polygon)
   let nx = ball.x - closest.point.x
   let ny = ball.y - closest.point.y
   let normalLength = Math.hypot(nx, ny)

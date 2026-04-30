@@ -800,20 +800,46 @@ function drawObstacles(context: CanvasRenderingContext2D, gameScene: GameScene) 
     if (obstacle.kind === 'circle') {
       context.arc(obstacle.x, obstacle.y, obstacle.radius, 0, Math.PI * 2)
     } else {
-      obstacle.points.forEach((point, index) => {
-        if (index === 0) {
-          context.moveTo(point.x, point.y)
-          return
-        }
-
-        context.lineTo(point.x, point.y)
-      })
-      context.closePath()
+      drawRoundedPolygonPath(context, obstacle.points, obstacle.cornerRadius)
     }
 
     context.fill()
     context.stroke()
   }
+}
+
+function drawRoundedPolygonPath(context: CanvasRenderingContext2D, points: Point[], radius: number) {
+  if (points.length < 3 || radius <= 0) {
+    points.forEach((point, index) => {
+      if (index === 0) {
+        context.moveTo(point.x, point.y)
+        return
+      }
+
+      context.lineTo(point.x, point.y)
+    })
+    context.closePath()
+    return
+  }
+
+  const starts = points.map((point, index) => {
+    const previous = points[(index + points.length - 1) % points.length]
+    const next = points[(index + 1) % points.length]
+    const trim = Math.min(radius, getDistance(point, previous) * 0.5, getDistance(point, next) * 0.5)
+
+    return {
+      start: getPointToward(point, previous, trim),
+      end: getPointToward(point, next, trim),
+    }
+  })
+
+  context.moveTo(starts[0].start.x, starts[0].start.y)
+  points.forEach((point, index) => {
+    const corner = starts[index]
+    context.lineTo(corner.start.x, corner.start.y)
+    context.quadraticCurveTo(point.x, point.y, corner.end.x, corner.end.y)
+  })
+  context.closePath()
 }
 
 function drawRipple(context: CanvasRenderingContext2D, gameScene: GameScene, origin: Point, age: number) {
@@ -1399,6 +1425,20 @@ function playPlaceSound(audioContext: AudioContext | null) {
   gain.connect(audioContext.destination)
   oscillator.start(now)
   oscillator.stop(now + 0.08)
+}
+
+function getPointToward(from: Point, to: Point, distance: number) {
+  const totalDistance = getDistance(from, to)
+
+  if (totalDistance === 0) {
+    return from
+  }
+
+  const progress = distance / totalDistance
+  return {
+    x: from.x + (to.x - from.x) * progress,
+    y: from.y + (to.y - from.y) * progress,
+  }
 }
 
 function getDistance(first: Point, second: Point) {
