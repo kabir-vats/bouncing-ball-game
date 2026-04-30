@@ -3,13 +3,11 @@ import './App.css'
 import {
   type Bounce,
   type GameScene,
-  type GeneratorConfig,
   type Point,
   boardCollisionInset,
   defaultGeneratorConfig,
   generateRandomScene,
   observeDuration,
-  scene,
   simulateTrajectory,
 } from './game'
 
@@ -63,6 +61,11 @@ type ThemePalette = {
   timerFill: string
   timerStroke: string
 }
+type DragState = {
+  origin: Point
+  pointerId: number
+  start: Point
+}
 
 const rippleSettleDuration = 2.45
 const endlessStartSeconds = 5
@@ -91,8 +94,8 @@ function App() {
   const activeGuessRef = useRef<Point | null>(null)
   const timerRemainingRef = useRef(endlessStartSeconds)
   const finishedLoopAbsoluteTimeRef = useRef(0)
-  const [currentScene, setCurrentScene] = useState(scene)
-  const [generatorConfig, setGeneratorConfig] = useState(defaultGeneratorConfig)
+  const finalScoreDragRef = useRef<DragState | null>(null)
+  const [currentScene, setCurrentScene] = useState(() => generateRandomScene(defaultGeneratorConfig, endlessGenerationBounces))
   const [phase, setPhase] = useState<Phase>('ready')
   const [stepTime, setStepTime] = useState(0)
   const [finalTrailTime, setFinalTrailTime] = useState(0)
@@ -105,6 +108,8 @@ function App() {
   const [highlightedBounce, setHighlightedBounce] = useState<number | null>(null)
   const [paused, setPaused] = useState(document.hidden)
   const [theme, setTheme] = useState<Theme>('night')
+  const [muted, setMuted] = useState(false)
+  const [finalScoreOffset, setFinalScoreOffset] = useState<Point>({ x: 0, y: 0 })
   const [renderRevision, setRenderRevision] = useState(0)
 
   const simulation = useMemo(() => simulateTrajectory(currentScene, finalLoopDuration), [currentScene])
@@ -138,13 +143,13 @@ function App() {
       const currentBounceIndex = getBounceIndexAtOrBefore(simulation.bounces, time)
       for (let index = lastSoundBounceRef.current + 1; index <= currentBounceIndex; index += 1) {
         const bounce = simulation.bounces[index]
-        if (bounce) {
+        if (bounce && !muted) {
           playBounceSound(audioContextRef.current, bounce.source)
         }
       }
       lastSoundBounceRef.current = Math.max(lastSoundBounceRef.current, currentBounceIndex)
     },
-    [simulation.bounces],
+    [muted, simulation.bounces],
   )
 
   const startNewRound = useCallback(() => {
@@ -155,7 +160,7 @@ function App() {
     finishedLoopAbsoluteTimeRef.current = 0
     lastSoundBounceRef.current = -1
     lastSoundTimeRef.current = 0
-    setCurrentScene(generateRandomScene(generatorConfig, endlessGenerationBounces))
+    setCurrentScene(generateRandomScene(defaultGeneratorConfig, endlessGenerationBounces))
     setActiveGuess(null)
     setTurnIndex(0)
     setTurnResults([])
@@ -164,8 +169,9 @@ function App() {
     setPauseBounceIndex(0)
     setStepTime(0)
     setFinalTrailTime(0)
+    setFinalScoreOffset({ x: 0, y: 0 })
     setPhase('ready')
-  }, [generatorConfig])
+  }, [])
 
   const watchOneBounceReplay = useCallback(() => {
     if (turnResults.length === 0) {
@@ -193,35 +199,40 @@ function App() {
     setPhase('finished')
   }, [turnResults])
 
-  const updateGeneratorConfig = useCallback(
-    (key: keyof GeneratorConfig, value: number) => {
-      const nextConfig = {
-        ...generatorConfig,
-        [key]: value,
+  const handleFinalScorePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if ((event.target as HTMLElement).closest('button, .score-breakdown, .score-line')) {
+        return
       }
-      const requiredBounces = endlessGenerationBounces
 
-      stepAnimationStartedAt.current = null
-      guessTimerStartedAt.current = null
-      activeGuessRef.current = null
-      finishedLoopStartTime.current = 0
-      finishedLoopAbsoluteTimeRef.current = 0
-      lastSoundBounceRef.current = -1
-      lastSoundTimeRef.current = 0
-      setGeneratorConfig(nextConfig)
-      setCurrentScene(generateRandomScene(nextConfig, requiredBounces))
-      setActiveGuess(null)
-      setTurnIndex(0)
-      setTurnResults([])
-      setHighlightedBounce(null)
-      setTimerRemaining(endlessStartSeconds)
-      setPauseBounceIndex(0)
-      setStepTime(0)
-      setFinalTrailTime(0)
-      setPhase('ready')
+      finalScoreDragRef.current = {
+        origin: finalScoreOffset,
+        pointerId: event.pointerId,
+        start: { x: event.clientX, y: event.clientY },
+      }
+      event.currentTarget.setPointerCapture(event.pointerId)
     },
-    [generatorConfig],
+    [finalScoreOffset],
   )
+
+  const handleFinalScorePointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = finalScoreDragRef.current
+
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return
+    }
+
+    setFinalScoreOffset({
+      x: drag.origin.x + event.clientX - drag.start.x,
+      y: drag.origin.y + event.clientY - drag.start.y,
+    })
+  }, [])
+
+  const handleFinalScorePointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (finalScoreDragRef.current?.pointerId === event.pointerId) {
+      finalScoreDragRef.current = null
+    }
+  }, [])
 
   const enableAudio = useCallback(() => {
     audioContextRef.current ??= new AudioContext()
@@ -284,13 +295,15 @@ function App() {
       const rect = canvas.getBoundingClientRect()
       const x = ((event.clientX - rect.left) / rect.width) * currentScene.width
       const y = ((event.clientY - rect.top) / rect.height) * currentScene.height
-      playPlaceSound(audioContextRef.current)
+      if (!muted) {
+        playPlaceSound(audioContextRef.current)
+      }
 
       const nextGuess = { x, y }
       activeGuessRef.current = nextGuess
       setActiveGuess(nextGuess)
     },
-    [currentScene.height, currentScene.width, phase],
+    [currentScene.height, currentScene.width, muted, phase],
   )
 
   useEffect(() => {
@@ -583,27 +596,35 @@ function App() {
 
         {phase === 'finished' && (
           <div className="final-score-menu">
-            <ScorePanel
-              label="final score"
-              maxScore={null}
-              score={displayScore}
-              onHover={setHighlightedBounce}
-              results={visibleScoreResults}
-            />
-            <div className="score-actions">
-              <button type="button" onClick={startNewRound}>
-                New Round
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => {
-                  enableAudio()
-                  watchOneBounceReplay()
-                }}
-              >
-                Watch Replay
-              </button>
+            <div
+              className="draggable-final-score"
+              onPointerDown={handleFinalScorePointerDown}
+              onPointerMove={handleFinalScorePointerMove}
+              onPointerUp={handleFinalScorePointerUp}
+              style={{ transform: `translate(${finalScoreOffset.x}px, ${finalScoreOffset.y}px)` }}
+            >
+              <ScorePanel
+                label="final score"
+                maxScore={null}
+                score={displayScore}
+                onHover={setHighlightedBounce}
+                results={visibleScoreResults}
+              />
+              <div className="score-actions">
+                <button type="button" onClick={startNewRound}>
+                  New Round
+                </button>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => {
+                    enableAudio()
+                    watchOneBounceReplay()
+                  }}
+                >
+                  Watch Replay
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -611,120 +632,37 @@ function App() {
         <div className="menu-shell">
           <button
             type="button"
-            className="menu-toggle"
+            className="menu-toggle icon-button"
             aria-expanded={settingsOpen}
+            aria-label="Settings"
             onClick={() => setSettingsOpen((open) => !open)}
           >
-            Settings
+            ⚙
           </button>
 
           {settingsOpen && (
             <aside className="hud" aria-label="Game settings">
-              <div className="hud-heading">
-                <div>
-                  <p className="eyebrow">phase</p>
-                  <h2>{getPhaseLabel(phase)}</h2>
-                </div>
-                <button type="button" className="icon-button small" aria-label="Close settings" onClick={() => setSettingsOpen(false)}>
-                  ×
-                </button>
-              </div>
+              <button
+                type="button"
+                className={`theme-switch ${theme === 'night' ? 'is-night' : 'is-sky'}`}
+                aria-label={`Switch to ${theme === 'night' ? 'sky' : 'night'} theme`}
+                aria-pressed={theme === 'sky'}
+                onClick={() => setTheme((current) => (current === 'night' ? 'sky' : 'night'))}
+              >
+                <span className="switch-track">
+                  <span className="switch-thumb">{theme === 'night' ? '☾' : '☀'}</span>
+                </span>
+              </button>
 
               <button
                 type="button"
-                className="theme-toggle"
-                aria-label={`Switch to ${theme === 'night' ? 'sky' : 'night'} theme`}
-                onClick={() => setTheme((current) => (current === 'night' ? 'sky' : 'night'))}
+                className={`sound-toggle ${muted ? 'is-muted' : ''}`}
+                aria-label={muted ? 'Unmute sound' : 'Mute sound'}
+                aria-pressed={!muted}
+                onClick={() => setMuted((current) => !current)}
               >
-                <span>{theme === 'night' ? '☾' : '☀'}</span>
-                <strong>{theme === 'night' ? 'Night' : 'Sky'}</strong>
+                <span>{muted ? '🔇' : '🔊'}</span>
               </button>
-
-              <div className="meter">
-                <span>Lives</span>
-                <strong>
-                  {Math.max(0, endlessLives - endlessMisses)}/{endlessLives}
-                </strong>
-              </div>
-
-              <div className="score-card">
-                <p className="eyebrow">endless rules</p>
-                <span>Keep predicting one bounce ahead. Three misses ends the run.</span>
-                <span>Timer decay slows at each second threshold, bottoming out at {endlessMinimumSeconds}s.</span>
-              </div>
-
-              <section className="generator-panel">
-                <div className="generator-heading">
-                  <p className="eyebrow">generator</p>
-                </div>
-
-                <ObstacleControls
-                  countKey="platforms"
-                  label="Platforms"
-                  maxCount={12}
-                  maxSize={220}
-                  minSize={40}
-                  sizeKey="platformSize"
-                  value={generatorConfig}
-                  onChange={updateGeneratorConfig}
-                />
-                <ObstacleControls
-                  countKey="circles"
-                  label="Circles"
-                  maxCount={8}
-                  maxSize={80}
-                  minSize={14}
-                  sizeKey="circleSize"
-                  value={generatorConfig}
-                  onChange={updateGeneratorConfig}
-                />
-                <ObstacleControls
-                  countKey="triangles"
-                  label="Triangles"
-                  maxCount={8}
-                  maxSize={110}
-                  minSize={28}
-                  sizeKey="triangleSize"
-                  value={generatorConfig}
-                  onChange={updateGeneratorConfig}
-                />
-                <ObstacleControls
-                  countKey="blocks"
-                  label="Blocks"
-                  maxCount={8}
-                  maxSize={100}
-                  minSize={22}
-                  sizeKey="blockSize"
-                  value={generatorConfig}
-                  onChange={updateGeneratorConfig}
-                />
-
-                <label className="range-field">
-                  <span>Ball speed</span>
-                  <strong>{generatorConfig.speed}</strong>
-                  <input
-                    max="620"
-                    min="180"
-                    step="5"
-                    type="range"
-                    value={generatorConfig.speed}
-                    onChange={(event) => updateGeneratorConfig('speed', Number(event.target.value))}
-                  />
-                </label>
-              </section>
-
-              <p className="hint">{getHint(phase, turnResults.length)}</p>
-
-              <div className="score-card">
-                <p className="eyebrow">score</p>
-                <strong>{formatScore(totalScore, maxScore)}</strong>
-                {turnResults.map((result, index) => (
-                  <span className="score-line" style={getScoreStyle(result.points, result.maxPoints)} key={`${result.target.time}-${index}`}>
-                    <span>Bounce {index + 1}</span>
-                    <span>{result.points}/{result.maxPoints}</span>
-                  </span>
-                ))}
-              </div>
             </aside>
           )}
         </div>
@@ -898,7 +836,7 @@ function getThemePalette(theme: Theme): ThemePalette {
     grid: '#334155',
     trail: '#38bdf8',
     ripple: '#67e8f9',
-    obstacleStroke: '#020617',
+    obstacleStroke: '#02061700',
     ball: '#f8fafc',
     ballFlash: '#ffffff',
     ballGlow: '#c7d2fe',
@@ -934,15 +872,20 @@ function drawNightSky(context: CanvasRenderingContext2D, gameScene: GameScene) {
 
   context.fillStyle = 'rgba(248, 250, 252, 0.76)'
   for (let index = 0; index < 54; index += 1) {
-    const x = ((index * 137.5) % gameScene.width)
-    const y = ((index * 79.3) % gameScene.height)
-    const radius = index % 7 === 0 ? 1.25 : 0.75
-    context.globalAlpha = 0.26 + (index % 5) * 0.12
+    const x = seededUnit(index * 2 + 11) * gameScene.width
+    const y = seededUnit(index * 2 + 29) * gameScene.height
+    const radius = seededUnit(index * 2 + 47) > 0.84 ? 1.3 : 0.7
+    context.globalAlpha = 0.24 + seededUnit(index * 2 + 71) * 0.6
     context.beginPath()
     context.arc(x, y, radius, 0, Math.PI * 2)
     context.fill()
   }
   context.globalAlpha = 1
+}
+
+function seededUnit(seed: number) {
+  const value = Math.sin(seed * 127.1 + 311.7) * 43758.5453123
+  return value - Math.floor(value)
 }
 
 function getAlphaColor(color: string, alpha: number) {
@@ -1285,55 +1228,6 @@ function ScorePanel({ label, maxScore, onHover, score, results }: ScorePanelProp
   )
 }
 
-type ObstacleControlsProps = {
-  countKey: keyof Pick<GeneratorConfig, 'blocks' | 'circles' | 'platforms' | 'triangles'>
-  label: string
-  maxCount: number
-  maxSize: number
-  minSize: number
-  sizeKey: keyof Pick<GeneratorConfig, 'blockSize' | 'circleSize' | 'platformSize' | 'triangleSize'>
-  value: GeneratorConfig
-  onChange: (key: keyof GeneratorConfig, value: number) => void
-}
-
-function ObstacleControls({
-  countKey,
-  label,
-  maxCount,
-  maxSize,
-  minSize,
-  sizeKey,
-  value,
-  onChange,
-}: ObstacleControlsProps) {
-  return (
-    <div className="obstacle-row">
-      <span>{label}</span>
-      <label>
-        Count
-        <input
-          max={maxCount}
-          min="0"
-          type="number"
-          value={value[countKey]}
-          onChange={(event) => onChange(countKey, Number(event.target.value))}
-        />
-      </label>
-      <label>
-        Avg size
-        <input
-          max={maxSize}
-          min={minSize}
-          step="2"
-          type="number"
-          value={value[sizeKey]}
-          onChange={(event) => onChange(sizeKey, Number(event.target.value))}
-        />
-      </label>
-    </div>
-  )
-}
-
 function getObstacleFill(kind: GameScene['obstacles'][number]['kind'], theme: Theme) {
   if (theme === 'sky') {
     if (kind === 'circle') return '#d6f7bf'
@@ -1379,11 +1273,6 @@ function getPhaseLabel(phase: Phase) {
   if (phase === 'finished') return 'results'
   if (phase === 'guessing') return 'place predictions'
   return 'results'
-}
-
-function getHint(phase: Phase, completedTurns: number) {
-  if (phase === 'guessing') return `Click the board to place marker ${completedTurns + 1}. Click again to move it before time runs out.`
-  return 'Yellow is your prediction. Green is the actual bounce point.'
 }
 
 function getVisibleTime(phase: Phase, stepTime: number, pauseTime: number, finalTargetTime?: number) {

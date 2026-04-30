@@ -70,13 +70,13 @@ export const boardCollisionInset = 1.5
 
 export const defaultGeneratorConfig: GeneratorConfig = {
   platforms: 7,
-  platformSize: 140,
+  platformSize: 130,
   circles: 3,
-  circleSize: 30,
+  circleSize: 45,
   triangles: 3,
-  triangleSize: 64,
-  blocks: 2,
-  blockSize: 46,
+  triangleSize: 100,
+  blocks: 3,
+  blockSize: 80,
   speed: 385,
 }
 
@@ -271,7 +271,7 @@ function buildRandomScene(config: GeneratorConfig, random: () => number): GameSc
 
   function addObstacles(count: number, createObstacle: () => Obstacle) {
     for (let index = 0; index < count; index += 1) {
-      for (let attempt = 0; attempt < 240; attempt += 1) {
+      for (let attempt = 0; attempt < 600; attempt += 1) {
         const obstacle = createObstacle()
         const obstacleBounds = getObstacleBounds(obstacle)
 
