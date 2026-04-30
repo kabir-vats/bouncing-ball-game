@@ -5,6 +5,7 @@ import {
   type GameScene,
   type GeneratorConfig,
   type Point,
+  boardCollisionInset,
   defaultGeneratorConfig,
   generateRandomScene,
   observeDuration,
@@ -41,12 +42,31 @@ type LabeledBounce = Bounce & {
   label?: number
 }
 type GuessTone = 'tentative'
+type Theme = 'sky' | 'night'
+type TrailSegment = {
+  from: Point
+  to: Point
+  startTime: number
+  endTime: number
+}
+type ThemePalette = {
+  backgroundTop: string
+  backgroundBottom: string
+  border: string
+  grid: string
+  trail: string
+  ripple: string
+  obstacleStroke: string
+  ball: string
+  ballFlash: string
+  ballGlow: string
+  timerFill: string
+  timerStroke: string
+}
 
-const boardAccent = '#67e8f9'
 const rippleSettleDuration = 2.45
 const endlessStartSeconds = 5
-const endlessMinimumSeconds = 2
-const endlessTimerDecay = 0.5
+const endlessMinimumSeconds = 1
 const endlessGenerationBounces = 18
 const endlessLives = 3
 const finalLoopDuration = 180
@@ -56,7 +76,6 @@ const maximumScoreTolerance = 120
 const minimumBounceMaxScore = 25
 const maximumBounceMaxScore = 200
 const maxScoreLogScale = 420
-const maxTrailSegments = 900
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -70,6 +89,8 @@ function App() {
   const finishedLoopStartTime = useRef(0)
   const guessTimerStartedAt = useRef<number | null>(null)
   const activeGuessRef = useRef<Point | null>(null)
+  const timerRemainingRef = useRef(endlessStartSeconds)
+  const finishedLoopAbsoluteTimeRef = useRef(0)
   const [currentScene, setCurrentScene] = useState(scene)
   const [generatorConfig, setGeneratorConfig] = useState(defaultGeneratorConfig)
   const [phase, setPhase] = useState<Phase>('ready')
@@ -82,9 +103,12 @@ function App() {
   const [turnResults, setTurnResults] = useState<TurnResult[]>([])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [highlightedBounce, setHighlightedBounce] = useState<number | null>(null)
+  const [paused, setPaused] = useState(document.hidden)
+  const [theme, setTheme] = useState<Theme>('night')
   const [renderRevision, setRenderRevision] = useState(0)
 
   const simulation = useMemo(() => simulateTrajectory(currentScene, finalLoopDuration), [currentScene])
+  const trailSegments = useMemo(() => getTrailSegments(simulation.samples), [simulation.samples])
   const openingBounceIndex = useMemo(
     () => Math.max(0, simulation.bounces.findIndex((bounce) => bounce.time > observeDuration)),
     [simulation.bounces],
@@ -128,6 +152,7 @@ function App() {
     guessTimerStartedAt.current = null
     activeGuessRef.current = null
     finishedLoopStartTime.current = 0
+    finishedLoopAbsoluteTimeRef.current = 0
     lastSoundBounceRef.current = -1
     lastSoundTimeRef.current = 0
     setCurrentScene(generateRandomScene(generatorConfig, endlessGenerationBounces))
@@ -157,6 +182,17 @@ function App() {
     setPhase('score-replay')
   }, [turnResults])
 
+  const skipScoringReplay = useCallback(() => {
+    const finishedAt = turnResults[turnResults.length - 1]?.target.time + 0.8 || stepAnimationToTime.current
+
+    stepAnimationStartedAt.current = null
+    finishedLoopStartTime.current = finishedAt
+    finishedLoopAbsoluteTimeRef.current = finishedAt
+    setStepTime(finishedAt)
+    setFinalTrailTime(finishedAt)
+    setPhase('finished')
+  }, [turnResults])
+
   const updateGeneratorConfig = useCallback(
     (key: keyof GeneratorConfig, value: number) => {
       const nextConfig = {
@@ -169,6 +205,7 @@ function App() {
       guessTimerStartedAt.current = null
       activeGuessRef.current = null
       finishedLoopStartTime.current = 0
+      finishedLoopAbsoluteTimeRef.current = 0
       lastSoundBounceRef.current = -1
       lastSoundTimeRef.current = 0
       setGeneratorConfig(nextConfig)
@@ -201,6 +238,7 @@ function App() {
 
     enableAudio()
     activeGuessRef.current = null
+    finishedLoopAbsoluteTimeRef.current = 0
     lastSoundBounceRef.current = -1
     lastSoundTimeRef.current = 0
     setActiveGuess(null)
@@ -260,6 +298,39 @@ function App() {
   }, [activeGuess])
 
   useEffect(() => {
+    timerRemainingRef.current = timerRemaining
+  }, [timerRemaining])
+
+  useEffect(() => {
+    const updatePaused = () => {
+      setPaused(document.hidden || !document.hasFocus())
+    }
+
+    document.addEventListener('visibilitychange', updatePaused)
+    window.addEventListener('blur', updatePaused)
+    window.addEventListener('focus', updatePaused)
+
+    return () => {
+      document.removeEventListener('visibilitychange', updatePaused)
+      window.removeEventListener('blur', updatePaused)
+      window.removeEventListener('focus', updatePaused)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (paused) {
+      if (phase === 'opening' || phase === 'turn-reveal' || phase === 'end-ripple' || phase === 'score-replay') {
+        stepAnimationFromTime.current = stepTime
+      }
+      if (phase === 'finished') {
+        finishedLoopStartTime.current = finishedLoopAbsoluteTimeRef.current
+      }
+      stepAnimationStartedAt.current = null
+      guessTimerStartedAt.current = null
+    }
+  }, [paused, phase, stepTime])
+
+  useEffect(() => {
     const canvas = canvasRef.current
     const container = canvas?.parentElement
 
@@ -276,6 +347,10 @@ function App() {
   }, [])
 
   useEffect(() => {
+    if (paused) {
+      return
+    }
+
     if (animationRef.current) {
       cancelAnimationFrame(animationRef.current)
     }
@@ -304,6 +379,7 @@ function App() {
             setStepTime(toTime)
             setFinalTrailTime(toTime)
             finishedLoopStartTime.current = toTime
+            finishedLoopAbsoluteTimeRef.current = toTime
             setPhase('finished')
           } else if (phase === 'end-ripple') {
             const replayEndTime = turnResults[turnResults.length - 1]?.target.time + 0.8 || toTime
@@ -359,6 +435,7 @@ function App() {
         const elapsed = (now - stepAnimationStartedAt.current) / 1000
         const absoluteTime = finishedLoopStartTime.current + elapsed
         const loopTime = absoluteTime % simulationDuration
+        finishedLoopAbsoluteTimeRef.current = absoluteTime
         setStepTime(loopTime)
         setFinalTrailTime(Math.min(absoluteTime, simulationDuration))
         playDueBounceSounds(loopTime)
@@ -377,6 +454,7 @@ function App() {
     openingBounceIndex,
     pauseBounceIndex,
     phase,
+    paused,
     simulation.bounces,
     simulation.samples,
     turnIndex,
@@ -385,12 +463,13 @@ function App() {
   ])
 
   useEffect(() => {
-    if (phase !== 'guessing') {
+    if (phase !== 'guessing' || paused) {
       return
     }
 
     let timerFrame = 0
-    guessTimerStartedAt.current = performance.now()
+    const elapsedBeforePause = Math.max(0, currentTurnSeconds - timerRemainingRef.current)
+    guessTimerStartedAt.current = performance.now() - elapsedBeforePause * 1000
 
     const tick = (now: number) => {
       const startedAt = guessTimerStartedAt.current ?? now
@@ -407,7 +486,7 @@ function App() {
 
     timerFrame = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(timerFrame)
-  }, [currentTurnSeconds, finishTurn, phase, turnIndex])
+  }, [currentTurnSeconds, finishTurn, paused, phase, turnIndex])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -426,6 +505,8 @@ function App() {
       rippleAge,
       samples: simulation.samples,
       targetBounces: visibleTargets,
+      theme,
+      trailSegments,
       highlightedLabel: highlightedBounce,
       trailTime: phase === 'finished' ? finalTrailTime : revealedTime,
       timerProgress,
@@ -442,12 +523,14 @@ function App() {
     simulation.bounces,
     simulation.samples,
     timerProgress,
+    theme,
+    trailSegments,
     visibleGuesses,
     visibleTargets,
   ])
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell theme-${theme}`}>
       <section className="game-stage" aria-label="Bouncy game">
         <div className="canvas-wrap">
           <canvas
@@ -484,13 +567,18 @@ function App() {
         )}
 
         {phase === 'score-replay' && (
-          <ScorePanel
-            label="scoring replay"
-            maxScore={maxScore}
-            score={displayScore}
-            onHover={setHighlightedBounce}
-            results={visibleScoreResults}
-          />
+          <>
+            <ScorePanel
+              label="scoring replay"
+              maxScore={maxScore}
+              score={displayScore}
+              onHover={setHighlightedBounce}
+              results={visibleScoreResults}
+            />
+            <button type="button" className="skip-replay-button secondary" onClick={skipScoringReplay}>
+              Skip Replay
+            </button>
+          </>
         )}
 
         {phase === 'finished' && (
@@ -542,6 +630,16 @@ function App() {
                 </button>
               </div>
 
+              <button
+                type="button"
+                className="theme-toggle"
+                aria-label={`Switch to ${theme === 'night' ? 'sky' : 'night'} theme`}
+                onClick={() => setTheme((current) => (current === 'night' ? 'sky' : 'night'))}
+              >
+                <span>{theme === 'night' ? '☾' : '☀'}</span>
+                <strong>{theme === 'night' ? 'Night' : 'Sky'}</strong>
+              </button>
+
               <div className="meter">
                 <span>Lives</span>
                 <strong>
@@ -552,7 +650,7 @@ function App() {
               <div className="score-card">
                 <p className="eyebrow">endless rules</p>
                 <span>Keep predicting one bounce ahead. Three misses ends the run.</span>
-                <span>Timer decays from {endlessStartSeconds}s to {endlessMinimumSeconds}s.</span>
+                <span>Timer decay slows at each second threshold, bottoming out at {endlessMinimumSeconds}s.</span>
               </div>
 
               <section className="generator-panel">
@@ -644,6 +742,8 @@ type DrawOptions = {
   rippleAge: number | null
   samples: ReturnType<typeof simulateTrajectory>['samples']
   targetBounces: LabeledBounce[]
+  theme: Theme
+  trailSegments: TrailSegment[]
   trailTime: number
   timerProgress: number | null
   time: number
@@ -664,17 +764,30 @@ function prepareCanvas(canvas: HTMLCanvasElement, context: CanvasRenderingContex
 }
 
 function drawScene(context: CanvasRenderingContext2D, options: DrawOptions) {
-  const { bounces, gameScene, guesses, highlightedLabel, phase, rippleAge, samples, targetBounces, timerProgress, time, trailTime } = options
+  const {
+    bounces,
+    gameScene,
+    guesses,
+    highlightedLabel,
+    phase,
+    rippleAge,
+    samples,
+    targetBounces,
+    theme,
+    timerProgress,
+    time,
+    trailSegments,
+    trailTime,
+  } = options
   const state = getStateAtFast(samples, time)
-  const sampleIndex = getSampleIndexAtOrBefore(samples, trailTime)
 
   context.clearRect(0, 0, gameScene.width, gameScene.height)
-  drawBoard(context, gameScene)
-  drawTrail(context, samples, sampleIndex)
-  drawObstacles(context, gameScene)
+  drawBoard(context, gameScene, theme)
+  drawTrail(context, trailSegments, trailTime, theme)
+  drawObstacles(context, gameScene, theme)
 
   if (rippleAge !== null && targetBounces.length > 0) {
-    drawRipple(context, gameScene, targetBounces[targetBounces.length - 1], rippleAge)
+    drawRipple(context, gameScene, targetBounces[targetBounces.length - 1], rippleAge, theme)
   }
 
   if (phase === 'score-replay' || phase === 'finished') {
@@ -686,7 +799,7 @@ function drawScene(context: CanvasRenderingContext2D, options: DrawOptions) {
   }
 
   drawGuesses(context, guesses, highlightedLabel)
-  drawBall(context, state, gameScene.ballRadius, timerProgress === null ? getImpactAge(bounces, time) : null, timerProgress)
+  drawBall(context, state, gameScene.ballRadius, timerProgress === null ? getImpactAge(bounces, time) : null, timerProgress, theme)
 }
 
 function getStateAtFast(samples: DrawOptions['samples'], time: number) {
@@ -760,19 +873,115 @@ function getBounceIndexAtOrBefore(bounces: Bounce[], time: number) {
   return high
 }
 
-function drawBoard(context: CanvasRenderingContext2D, gameScene: GameScene) {
+function getThemePalette(theme: Theme): ThemePalette {
+  if (theme === 'sky') {
+    return {
+      backgroundTop: '#5b8ed0',
+      backgroundBottom: '#8fd3ff',
+      border: '#cbd5e1',
+      grid: '#ffffff',
+      trail: '#07839c',
+      ripple: '#0ea5e9',
+      obstacleStroke: '#e3f0fc',
+      ball: '#f97316',
+      ballFlash: '#fff7ed',
+      ballGlow: '#fb923c',
+      timerFill: 'rgba(255, 255, 255, 0.62)',
+      timerStroke: 'rgba(234, 88, 12, 0.9)',
+    }
+  }
+
+  return {
+    backgroundTop: '#101827',
+    backgroundBottom: '#050914',
+    border: '#67e8f9',
+    grid: '#334155',
+    trail: '#38bdf8',
+    ripple: '#67e8f9',
+    obstacleStroke: '#020617',
+    ball: '#f8fafc',
+    ballFlash: '#ffffff',
+    ballGlow: '#c7d2fe',
+    timerFill: 'rgba(2, 6, 23, 0.58)',
+    timerStroke: 'rgba(255, 255, 255, 0.94)',
+  }
+}
+
+function drawSkyGlow(context: CanvasRenderingContext2D, gameScene: GameScene) {
+  const glow = context.createRadialGradient(gameScene.width * 0.5, 0, 20, gameScene.width * 0.5, 0, gameScene.height)
+  glow.addColorStop(0, 'rgba(255, 255, 255, 0.72)')
+  glow.addColorStop(0.48, 'rgba(219, 234, 254, 0.18)')
+  glow.addColorStop(1, 'rgba(14, 165, 233, 0.08)')
+  context.fillStyle = glow
+  context.fillRect(0, 0, gameScene.width, gameScene.height)
+}
+
+function drawNightSky(context: CanvasRenderingContext2D, gameScene: GameScene) {
+  const aurora = context.createRadialGradient(
+    gameScene.width * 0.62,
+    gameScene.height * 0.05,
+    20,
+    gameScene.width * 0.5,
+    gameScene.height * 0.1,
+    gameScene.width * 0.75,
+  )
+  aurora.addColorStop(0, 'rgba(52, 211, 153, 0.28)')
+  aurora.addColorStop(0.38, 'rgba(56, 189, 248, 0.16)')
+  aurora.addColorStop(0.72, 'rgba(168, 85, 247, 0.12)')
+  aurora.addColorStop(1, 'rgba(15, 23, 42, 0)')
+  context.fillStyle = aurora
+  context.fillRect(0, 0, gameScene.width, gameScene.height)
+
+  context.fillStyle = 'rgba(248, 250, 252, 0.76)'
+  for (let index = 0; index < 54; index += 1) {
+    const x = ((index * 137.5) % gameScene.width)
+    const y = ((index * 79.3) % gameScene.height)
+    const radius = index % 7 === 0 ? 1.25 : 0.75
+    context.globalAlpha = 0.26 + (index % 5) * 0.12
+    context.beginPath()
+    context.arc(x, y, radius, 0, Math.PI * 2)
+    context.fill()
+  }
+  context.globalAlpha = 1
+}
+
+function getAlphaColor(color: string, alpha: number) {
+  const hex = color.replace('#', '')
+  if (hex.length !== 6) {
+    return color
+  }
+
+  const red = Number.parseInt(hex.slice(0, 2), 16)
+  const green = Number.parseInt(hex.slice(2, 4), 16)
+  const blue = Number.parseInt(hex.slice(4, 6), 16)
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`
+}
+
+function drawBoard(context: CanvasRenderingContext2D, gameScene: GameScene, theme: Theme) {
+  const palette = getThemePalette(theme)
   const gradient = context.createLinearGradient(0, 0, gameScene.width, gameScene.height)
-  gradient.addColorStop(0, '#111827')
-  gradient.addColorStop(1, '#0a0f1e')
+  gradient.addColorStop(0, palette.backgroundTop)
+  gradient.addColorStop(1, palette.backgroundBottom)
   context.fillStyle = gradient
   context.fillRect(0, 0, gameScene.width, gameScene.height)
 
-  context.strokeStyle = boardAccent
+  if (theme === 'night') {
+    drawNightSky(context, gameScene)
+  } else {
+    drawSkyGlow(context, gameScene)
+  }
+
+  context.strokeStyle = palette.border
   context.lineWidth = 1.5
-  context.strokeRect(0.75, 0.75, gameScene.width - 1.5, gameScene.height - 1.5)
+  context.strokeRect(
+    boardCollisionInset / 2,
+    boardCollisionInset / 2,
+    gameScene.width - boardCollisionInset,
+    gameScene.height - boardCollisionInset,
+  )
 
   context.globalAlpha = 0.12
-  context.strokeStyle = '#334155'
+  context.strokeStyle = palette.grid
   context.lineWidth = 1
   for (let x = 80; x < gameScene.width; x += 80) {
     context.beginPath()
@@ -789,13 +998,14 @@ function drawBoard(context: CanvasRenderingContext2D, gameScene: GameScene) {
   context.globalAlpha = 1
 }
 
-function drawObstacles(context: CanvasRenderingContext2D, gameScene: GameScene) {
-  context.strokeStyle = '#020617'
+function drawObstacles(context: CanvasRenderingContext2D, gameScene: GameScene, theme: Theme) {
+  const palette = getThemePalette(theme)
+  context.strokeStyle = palette.obstacleStroke
   context.lineWidth = 2
 
   for (const obstacle of gameScene.obstacles) {
     context.beginPath()
-    context.fillStyle = getObstacleFill(obstacle.kind)
+    context.fillStyle = getObstacleFill(obstacle.kind, theme)
 
     if (obstacle.kind === 'circle') {
       context.arc(obstacle.x, obstacle.y, obstacle.radius, 0, Math.PI * 2)
@@ -842,7 +1052,8 @@ function drawRoundedPolygonPath(context: CanvasRenderingContext2D, points: Point
   context.closePath()
 }
 
-function drawRipple(context: CanvasRenderingContext2D, gameScene: GameScene, origin: Point, age: number) {
+function drawRipple(context: CanvasRenderingContext2D, gameScene: GameScene, origin: Point, age: number, theme: Theme) {
+  const palette = getThemePalette(theme)
   const maxRadius = Math.hypot(gameScene.width, gameScene.height)
   const waveRadius = age * 560
 
@@ -858,7 +1069,7 @@ function drawRipple(context: CanvasRenderingContext2D, gameScene: GameScene, ori
     const alpha = Math.max(0, 0.58 - radius / maxRadius) * Math.max(0, 1 - age / rippleSettleDuration) * (1 - index * 0.1)
     context.beginPath()
     context.arc(origin.x, origin.y, radius, 0, Math.PI * 2)
-    context.strokeStyle = `rgba(103, 232, 249, ${alpha})`
+    context.strokeStyle = getAlphaColor(palette.ripple, alpha)
     context.lineWidth = 2.8 - index * 0.25
     context.stroke()
   }
@@ -875,7 +1086,7 @@ function drawRipple(context: CanvasRenderingContext2D, gameScene: GameScene, ori
     const echoProgress = arrival / 180
     context.beginPath()
     context.arc(center.x, center.y, radius + echoProgress * 42, 0, Math.PI * 2)
-    context.strokeStyle = `rgba(103, 232, 249, ${0.36 * (1 - echoProgress)})`
+    context.strokeStyle = getAlphaColor(palette.ripple, 0.36 * (1 - echoProgress))
     context.lineWidth = 2
     context.stroke()
   }
@@ -883,28 +1094,42 @@ function drawRipple(context: CanvasRenderingContext2D, gameScene: GameScene, ori
   context.restore()
 }
 
-function drawTrail(context: CanvasRenderingContext2D, samples: DrawOptions['samples'], endIndex: number) {
-  if (samples.length < 2 || endIndex < 1) {
+function drawTrail(context: CanvasRenderingContext2D, segments: TrailSegment[], trailTime: number, theme: Theme) {
+  if (segments.length === 0 || trailTime <= 0) {
     return
   }
 
-  const startIndex = 0
-  const stride = Math.max(1, Math.ceil((endIndex - startIndex) / maxTrailSegments))
-
   context.beginPath()
-  for (let index = startIndex; index <= endIndex; index += stride) {
-    const sample = samples[index]
-    if (index === startIndex) {
-      context.moveTo(sample.x, sample.y)
-      continue
+  let drewSegment = false
+
+  for (const segment of segments) {
+    if (trailTime < segment.startTime) {
+      break
     }
-    context.lineTo(sample.x, sample.y)
+
+    const progress =
+      trailTime >= segment.endTime
+        ? 1
+        : (trailTime - segment.startTime) / Math.max(0.0001, segment.endTime - segment.startTime)
+    const to = {
+      x: segment.from.x + (segment.to.x - segment.from.x) * progress,
+      y: segment.from.y + (segment.to.y - segment.from.y) * progress,
+    }
+
+    context.moveTo(segment.from.x, segment.from.y)
+    context.lineTo(to.x, to.y)
+    drewSegment = true
+
+    if (progress < 1) {
+      break
+    }
   }
-  if ((endIndex - startIndex) % stride !== 0) {
-    const finalSample = samples[endIndex]
-    context.lineTo(finalSample.x, finalSample.y)
+
+  if (!drewSegment) {
+    return
   }
-  context.strokeStyle = '#38bdf8'
+
+  context.strokeStyle = getThemePalette(theme).trail
   context.globalAlpha = 0.42
   context.lineWidth = 3
   context.lineCap = 'round'
@@ -918,7 +1143,9 @@ function drawBall(
   radius: number,
   impactAge: number | null,
   timerProgress: number | null,
+  theme: Theme,
 ) {
+  const palette = getThemePalette(theme)
   const age = impactAge ?? 0
   const impact = impactAge === null ? 0 : Math.max(0, 1 - age / 0.18)
   const flicker = impact > 0 ? 0.5 + Math.sin(age * 90) * 0.5 : 0
@@ -927,18 +1154,29 @@ function drawBall(
   if (impact > 0) {
     context.beginPath()
     context.arc(point.x, point.y, radius + 8 + impact * 14, 0, Math.PI * 2)
-    context.strokeStyle = `rgba(255, 247, 237, ${0.5 * impact})`
+    context.strokeStyle = getAlphaColor(palette.ballFlash, 0.5 * impact)
     context.lineWidth = 2
     context.stroke()
   }
 
   context.beginPath()
   context.arc(point.x, point.y, radius + flash * 3, 0, Math.PI * 2)
-  context.fillStyle = flash > 0.45 ? '#fff7ed' : '#f97316'
-  context.shadowColor = '#fb923c'
+  context.fillStyle = flash > 0.45 ? palette.ballFlash : palette.ball
+  context.shadowColor = palette.ballGlow
   context.shadowBlur = 18 + flash * 18
   context.fill()
   context.shadowBlur = 0
+
+  if (theme === 'night') {
+    context.beginPath()
+    context.arc(point.x - radius * 0.24, point.y - radius * 0.26, radius * 0.18, 0, Math.PI * 2)
+    context.fillStyle = 'rgba(148, 163, 184, 0.26)'
+    context.fill()
+    context.beginPath()
+    context.arc(point.x + radius * 0.22, point.y + radius * 0.08, radius * 0.11, 0, Math.PI * 2)
+    context.fillStyle = 'rgba(148, 163, 184, 0.18)'
+    context.fill()
+  }
 
   if (timerProgress !== null) {
     const startAngle = -Math.PI / 2
@@ -946,14 +1184,14 @@ function drawBall(
 
     context.beginPath()
     context.moveTo(point.x, point.y)
-    context.arc(point.x, point.y, radius * 0.72, startAngle, endAngle)
+    context.arc(point.x, point.y, radius * 0.95, startAngle, endAngle)
     context.closePath()
-    context.fillStyle = 'rgba(2, 6, 23, 0.58)'
+    context.fillStyle = palette.timerFill
     context.fill()
 
     context.beginPath()
-    context.arc(point.x, point.y, radius * 0.86, 0, Math.PI * 2)
-    context.strokeStyle = 'rgba(103, 232, 249, 0.9)'
+    context.arc(point.x, point.y, radius * 1, 0, Math.PI * 2)
+    context.strokeStyle = palette.timerStroke
     context.lineWidth = 2
     context.stroke()
   }
@@ -1096,7 +1334,14 @@ function ObstacleControls({
   )
 }
 
-function getObstacleFill(kind: GameScene['obstacles'][number]['kind']) {
+function getObstacleFill(kind: GameScene['obstacles'][number]['kind'], theme: Theme) {
+  if (theme === 'sky') {
+    if (kind === 'circle') return '#d6f7bf'
+    if (kind === 'triangle') return '#c1dffc'
+    if (kind === 'block') return '#f6c8d4'
+    return '#f6fcd6'
+  }
+
   if (kind === 'circle') return '#bfdbfe'
   if (kind === 'triangle') return '#ddd6fe'
   if (kind === 'block') return '#fecdd3'
@@ -1268,7 +1513,25 @@ function getGuessColors(tone: GuessTone | undefined, score = 0.65) {
 }
 
 function getTurnSeconds(turnIndex: number) {
-  return Math.max(endlessMinimumSeconds, endlessStartSeconds - turnIndex * endlessTimerDecay)
+  let seconds = endlessStartSeconds
+
+  for (let index = 0; index < turnIndex; index += 1) {
+    seconds = Math.max(endlessMinimumSeconds, seconds - getTimerDecayStep(seconds))
+  }
+
+  return roundTimerSeconds(seconds)
+}
+
+function getTimerDecayStep(seconds: number) {
+  if (seconds > 4) return 0.5
+  if (seconds > 3) return 0.25
+  if (seconds > 2) return 0.125
+  if (seconds > 1) return 0.0625
+  return 0
+}
+
+function roundTimerSeconds(seconds: number) {
+  return Math.round(seconds * 1000) / 1000
 }
 
 function getRevealSpeedMultiplier(turnIndex: number) {
@@ -1315,6 +1578,48 @@ function getScoreRatio(result: TurnResult) {
 
 function getPredictionMaxScore(results: TurnResult[]) {
   return results.reduce((total, result) => total + result.maxPoints, 0)
+}
+
+function getTrailSegments(samples: DrawOptions['samples']): TrailSegment[] {
+  if (samples.length < 2) {
+    return []
+  }
+
+  const segments: TrailSegment[] = []
+  let start = samples[0]
+  let previous = samples[0]
+
+  for (let index = 1; index < samples.length; index += 1) {
+    const current = samples[index]
+    const velocityChanged =
+      Math.abs(current.vx - previous.vx) > 0.001 ||
+      Math.abs(current.vy - previous.vy) > 0.001
+
+    if (velocityChanged) {
+      if (previous.time > start.time) {
+        segments.push({
+          from: start,
+          to: previous,
+          startTime: start.time,
+          endTime: previous.time,
+        })
+      }
+      start = previous
+    }
+
+    previous = current
+  }
+
+  if (previous.time > start.time) {
+    segments.push({
+      from: start,
+      to: previous,
+      startTime: start.time,
+      endTime: previous.time,
+    })
+  }
+
+  return segments
 }
 
 function getTrajectoryDistance(samples: DrawOptions['samples'], fromTime: number, toTime: number) {
@@ -1446,5 +1751,3 @@ function getDistance(first: Point, second: Point) {
 }
 
 export default App
-
-

@@ -66,6 +66,7 @@ type ObstacleBounds = {
 
 export const observeDuration = 1.15
 export const defaultRequiredBounces = 18
+export const boardCollisionInset = 1.5
 
 export const defaultGeneratorConfig: GeneratorConfig = {
   platforms: 7,
@@ -430,7 +431,7 @@ function getQuadraticPoint(start: Point, control: Point, end: Point, progress: n
 
 function resolveWallCollision(ball: BallState, gameScene: GameScene) {
   let bounced = false
-  const radius = gameScene.ballRadius
+  const radius = gameScene.ballRadius + boardCollisionInset
 
   if (ball.x < radius) {
     ball.x = radius
