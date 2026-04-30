@@ -656,6 +656,159 @@ button.compact {
   }
 }
 
+@media (max-width: 900px) and (orientation: portrait) {
+  .game-stage {
+    width: min(calc(100vw - 16px), calc((100svh - 16px) * 0.625));
+    height: min(calc(100svh - 16px), calc((100vw - 16px) / 0.625));
+  }
+
+  .canvas-wrap {
+    top: 50%;
+    left: 50%;
+    right: auto;
+    bottom: auto;
+    width: 160%;
+    height: 62.5%;
+    transform: translate(-50%, -50%) rotate(90deg);
+    transform-origin: center;
+  }
+
+  .status-strip {
+    left: 8px;
+    top: 8px;
+    max-width: calc(100% - 48px);
+    gap: 5px;
+    padding: 4px 7px;
+    font-size: 0.62rem;
+  }
+
+  .life-pips {
+    gap: 3px;
+  }
+
+  .life-pips i {
+    width: 6px;
+    height: 6px;
+  }
+
+  .tutorial-tip {
+    left: 8px;
+    top: 42px;
+    max-width: min(240px, calc(100% - 16px));
+    gap: 7px;
+    padding: 7px 8px;
+    font-size: 0.62rem;
+    line-height: 1.18;
+  }
+
+  .game-stage > .score-panel {
+    top: 48px;
+    right: 8px;
+    width: min(210px, calc(100% - 16px));
+    gap: 5px;
+    padding: 10px;
+    font-size: 0.72rem;
+  }
+
+  .score-panel strong {
+    font-size: clamp(1.45rem, 8vw, 2.2rem);
+  }
+
+  .score-breakdown {
+    max-height: min(28vh, 190px);
+    font-size: 0.68rem;
+  }
+
+  .score-line {
+    gap: 5px;
+    padding: 3px 4px;
+  }
+
+  .final-score-menu .score-panel {
+    min-width: min(260px, calc(100vw - 40px));
+    max-width: min(300px, calc(100vw - 40px));
+    gap: 6px;
+    padding: 12px;
+  }
+
+  .final-score-menu .score-panel strong {
+    font-size: clamp(2.1rem, 15vw, 4rem);
+  }
+
+  .final-score-note {
+    max-width: min(300px, calc(100vw - 40px));
+    padding: 7px 9px;
+    font-size: 0.68rem;
+  }
+
+  .score-actions {
+    gap: 6px;
+  }
+
+  .score-actions button,
+  .skip-replay-button,
+  .challenge-dropdown-toggle {
+    padding: 7px 10px;
+    font-size: 0.75rem;
+  }
+
+  .ready-panel,
+  .challenge-panel,
+  .challenge-dropdown {
+    width: min(300px, calc(100vw - 40px));
+    padding: 10px;
+    font-size: 0.76rem;
+  }
+
+  .ready-panel strong,
+  .challenge-panel-heading strong {
+    font-size: 0.88rem;
+  }
+
+  .initials-field,
+  .challenge-error,
+  .challenge-entry,
+  .challenge-share-row span {
+    font-size: 0.68rem;
+  }
+
+  .menu-shell {
+    top: 8px;
+    right: 8px;
+  }
+
+  .icon-button {
+    width: 30px;
+    height: 30px;
+  }
+
+  .theme-switch {
+    width: 70px;
+    height: 34px;
+  }
+
+  .switch-track {
+    width: 60px;
+    height: 25px;
+  }
+
+  .switch-thumb {
+    width: 19px;
+    height: 19px;
+    font-size: 0.82rem;
+  }
+
+  .theme-switch.is-sky .switch-thumb {
+    transform: translateX(35px);
+  }
+
+  .sound-toggle {
+    width: 34px;
+    height: 34px;
+    font-size: 0.86rem;
+  }
+}
+
 @media (max-width: 900px) and (orientation: landscape) {
   .app-shell {
     grid-template-columns: 1fr;

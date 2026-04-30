@@ -162,6 +162,7 @@ function App() {
   const [muted, setMuted] = useState(false)
   const [finalScoreOffset, setFinalScoreOffset] = useState<Point>({ x: 0, y: 0 })
   const [renderRevision, setRenderRevision] = useState(0)
+  const [boardRotated, setBoardRotated] = useState(() => isPortraitBoardLayout())
   const [localHighScore, setLocalHighScore] = useState(() => readLocalHighScore())
   const [finalMessage, setFinalMessage] = useState('')
   const [activeTip, setActiveTip] = useState<TutorialTip | null>(null)
@@ -468,8 +469,10 @@ function App() {
 
       const canvas = event.currentTarget
       const rect = canvas.getBoundingClientRect()
-      const x = ((event.clientX - rect.left) / rect.width) * currentScene.width
-      const y = ((event.clientY - rect.top) / rect.height) * currentScene.height
+      const pointerX = (event.clientX - rect.left) / rect.width
+      const pointerY = (event.clientY - rect.top) / rect.height
+      const x = (boardRotated ? pointerY : pointerX) * currentScene.width
+      const y = (boardRotated ? 1 - pointerX : pointerY) * currentScene.height
       if (!muted) {
         playPlaceSound(audioContextRef.current)
       }
@@ -478,7 +481,7 @@ function App() {
       activeGuessRef.current = nextGuess
       setActiveGuess(nextGuess)
     },
-    [currentScene.height, currentScene.width, muted, phase],
+    [boardRotated, currentScene.height, currentScene.width, muted, phase],
   )
 
   useEffect(() => {
@@ -532,6 +535,23 @@ function App() {
 
     resizeObserver.observe(container)
     return () => resizeObserver.disconnect()
+  }, [])
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(orientation: portrait) and (max-width: 900px)')
+    const updateBoardRotation = () => {
+      setBoardRotated(mediaQuery.matches)
+      setRenderRevision((revision) => revision + 1)
+    }
+
+    updateBoardRotation()
+    mediaQuery.addEventListener('change', updateBoardRotation)
+    window.addEventListener('resize', updateBoardRotation)
+
+    return () => {
+      mediaQuery.removeEventListener('change', updateBoardRotation)
+      window.removeEventListener('resize', updateBoardRotation)
+    }
   }, [])
 
   useEffect(() => {
@@ -835,6 +855,7 @@ function App() {
       theme,
       trailSegments,
       highlightedLabel: highlightedBounce,
+      rotateLabels: boardRotated,
       trailTime: phase === 'finished' ? finalTrailTime : revealedTime,
       timerProgress,
       time: revealedTime,
@@ -854,6 +875,7 @@ function App() {
     trailSegments,
     visibleGuesses,
     visibleTargets,
+    boardRotated,
   ])
 
   return (
@@ -1293,6 +1315,10 @@ function getRandomGameOverMessage() {
   return gameOverMessages[Math.floor(Math.random() * gameOverMessages.length)]
 }
 
+function isPortraitBoardLayout() {
+  return window.matchMedia('(orientation: portrait) and (max-width: 900px)').matches
+}
+
 type DrawOptions = {
   bounces: Bounce[]
   gameScene: GameScene
@@ -1300,6 +1326,7 @@ type DrawOptions = {
   highlightedLabel: number | null
   phase: Phase
   rippleAge: number | null
+  rotateLabels: boolean
   samples: ReturnType<typeof simulateTrajectory>['samples']
   targetBounces: LabeledBounce[]
   theme: Theme
@@ -1310,10 +1337,11 @@ type DrawOptions = {
 }
 
 function prepareCanvas(canvas: HTMLCanvasElement, context: CanvasRenderingContext2D, gameScene: GameScene) {
-  const rect = canvas.getBoundingClientRect()
+  const cssWidth = canvas.clientWidth
+  const cssHeight = canvas.clientHeight
   const pixelRatio = Math.min(window.devicePixelRatio || 1, 3)
-  const pixelWidth = Math.max(1, Math.round(rect.width * pixelRatio))
-  const pixelHeight = Math.max(1, Math.round(rect.height * pixelRatio))
+  const pixelWidth = Math.max(1, Math.round(cssWidth * pixelRatio))
+  const pixelHeight = Math.max(1, Math.round(cssHeight * pixelRatio))
 
   if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
     canvas.width = pixelWidth
@@ -1331,6 +1359,7 @@ function drawScene(context: CanvasRenderingContext2D, options: DrawOptions) {
     highlightedLabel,
     phase,
     rippleAge,
+    rotateLabels,
     samples,
     targetBounces,
     theme,
@@ -1355,10 +1384,11 @@ function drawScene(context: CanvasRenderingContext2D, options: DrawOptions) {
       context,
       targetBounces.filter((bounce) => bounce.time <= time || phase === 'finished'),
       highlightedLabel,
+      rotateLabels,
     )
   }
 
-  drawGuesses(context, guesses, highlightedLabel)
+  drawGuesses(context, guesses, highlightedLabel, rotateLabels)
   drawBall(context, state, gameScene.ballRadius, timerProgress === null ? getImpactAge(bounces, time) : null, timerProgress, theme)
 }
 
@@ -1762,7 +1792,12 @@ function drawBall(
   }
 }
 
-function drawGuesses(context: CanvasRenderingContext2D, guesses: LabeledPoint[], highlightedLabel: number | null) {
+function drawGuesses(
+  context: CanvasRenderingContext2D,
+  guesses: LabeledPoint[],
+  highlightedLabel: number | null,
+  rotateLabels: boolean,
+) {
   guesses.forEach((guess, index) => {
     const colors = getGuessColors(guess.tone, guess.score)
     const highlighted = highlightedLabel !== null && guess.label === highlightedLabel
@@ -1779,11 +1814,16 @@ function drawGuesses(context: CanvasRenderingContext2D, guesses: LabeledPoint[],
     context.font = '700 14px Inter, system-ui, sans-serif'
     context.textAlign = 'center'
     context.textBaseline = 'middle'
-    context.fillText(String(guess.label ?? index + 1), guess.x, guess.y)
+    drawCenteredLabel(context, String(guess.label ?? index + 1), guess, rotateLabels)
   })
 }
 
-function drawTargets(context: CanvasRenderingContext2D, bounces: LabeledBounce[], highlightedLabel: number | null) {
+function drawTargets(
+  context: CanvasRenderingContext2D,
+  bounces: LabeledBounce[],
+  highlightedLabel: number | null,
+  rotateLabels: boolean,
+) {
   bounces.forEach((bounce, index) => {
     const highlighted = highlightedLabel !== null && bounce.label === highlightedLabel
     context.beginPath()
@@ -1799,8 +1839,21 @@ function drawTargets(context: CanvasRenderingContext2D, bounces: LabeledBounce[]
     context.font = '700 13px Inter, system-ui, sans-serif'
     context.textAlign = 'center'
     context.textBaseline = 'middle'
-    context.fillText(String(bounce.label ?? index + 1), bounce.x, bounce.y)
+    drawCenteredLabel(context, String(bounce.label ?? index + 1), bounce, rotateLabels)
   })
+}
+
+function drawCenteredLabel(context: CanvasRenderingContext2D, label: string, point: Point, rotateLabels: boolean) {
+  if (!rotateLabels) {
+    context.fillText(label, point.x, point.y)
+    return
+  }
+
+  context.save()
+  context.translate(point.x, point.y)
+  context.rotate(-Math.PI / 2)
+  context.fillText(label, 0, 0)
+  context.restore()
 }
 
 type ScorePanelProps = {
