@@ -115,7 +115,7 @@ const obstaclePadding = 18
 export function generateRandomScene(
   config: GeneratorConfig,
   requiredBounces = defaultRequiredBounces,
-  seed = crypto.getRandomValues(new Uint32Array(1))[0],
+  seed = createRandomSeed(),
 ): GameScene {
   const random = createRandom(seed)
   let fallback = scene
@@ -134,6 +134,10 @@ export function generateRandomScene(
   }
 
   return fallback
+}
+
+export function createRandomSeed() {
+  return crypto.getRandomValues(new Uint32Array(1))[0]
 }
 
 export function simulateTrajectory(gameScene: GameScene, duration = 10, dt = sampleRate): Simulation {

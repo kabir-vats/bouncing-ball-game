@@ -1,10 +1,18 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import {
+  type ChallengeRecord,
+  createChallenge,
+  getChallenge,
+  getChallengeUrl,
+  submitChallengeScore,
+} from './challenges'
+import {
   type Bounce,
   type GameScene,
   type Point,
   boardCollisionInset,
+  createRandomSeed,
   defaultGeneratorConfig,
   generateRandomScene,
   observeDuration,
@@ -66,6 +74,17 @@ type DragState = {
   pointerId: number
   start: Point
 }
+type BoardState = {
+  scene: GameScene
+  seed: number
+  source: 'challenge' | 'random' | 'url'
+}
+type ChallengeAttemptStatus = 'fresh' | 'started' | 'submitted'
+type TutorialTipKey = 'firstPrediction' | 'firstScore' | 'longPath' | 'firstMiss' | 'finishedRun'
+type TutorialTip = {
+  key: TutorialTipKey
+  text: string
+}
 
 const rippleSettleDuration = 2.45
 const endlessStartSeconds = 5
@@ -79,6 +98,35 @@ const maximumScoreTolerance = 120
 const minimumBounceMaxScore = 25
 const maximumBounceMaxScore = 200
 const maxScoreLogScale = 420
+const localHighScoreKey = 'bounce-call.local-best'
+const playerIdKey = 'bounce-call.player-id'
+const playerInitialsKey = 'bounce-call.player-initials'
+const challengeAttemptPrefix = 'bounce-call.challenge-attempt.'
+const tutorialStoragePrefix = 'bounce-call.tutorial.'
+const seedQueryParam = 'seed'
+const challengeQueryParam = 'challenge'
+const fallbackInitials = 'YOU'
+const gameOverMessages = [
+  'Boing Boing Boing Boing Boing',
+  'Accurate Physics Verified™',
+  "Those corners don't seem fair, do they?",
+  "Keep going. You can do it. Don't quit... Inspired?",
+  'For Sale. Bouncing Ball. Unpredictable.',
+  'Did you remember to bring your protractor?',
+  "Hey, it's me. I'm the ball! They told me if you score higher than 1000 they'll let me out of here.",
+  "Frankly, my ball, I don't give a bounce",
+  "After all, what's a life, anyway? We're born, we bounce for a little while, we die",
+  "Chaos isn't a pit. Chaos is a ladder",
+  "I could die for you. But I couldn't, and wouldn't, bounce for you.",
+  'It was the best of spheres, it was the worst of spheres.',
+  'To bounce or not to bounce...',
+  'This is the way the world ends. Not with a bang, but with a "BOING"',
+  "Three lives isn't enough? Please file a petition at your local office, we hope to respond within 40 business days.",
+  'We are all in the gutter, but some of us are looking at the balls.',
+  "Here's to the fools who bounce.",
+  'City of balls, are you bouncing just for me?',
+  'Elite Ball Knowledge',
+]
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -95,7 +143,10 @@ function App() {
   const timerRemainingRef = useRef(endlessStartSeconds)
   const finishedLoopAbsoluteTimeRef = useRef(0)
   const finalScoreDragRef = useRef<DragState | null>(null)
-  const [currentScene, setCurrentScene] = useState(() => generateRandomScene(defaultGeneratorConfig, endlessGenerationBounces))
+  const runBestBeforeRef = useRef(0)
+  const recordedFinishedScoreRef = useRef<string | null>(null)
+  const [board, setBoard] = useState<BoardState>(() => createInitialBoard())
+  const currentScene = board.scene
   const [phase, setPhase] = useState<Phase>('ready')
   const [stepTime, setStepTime] = useState(0)
   const [finalTrailTime, setFinalTrailTime] = useState(0)
@@ -111,6 +162,20 @@ function App() {
   const [muted, setMuted] = useState(false)
   const [finalScoreOffset, setFinalScoreOffset] = useState<Point>({ x: 0, y: 0 })
   const [renderRevision, setRenderRevision] = useState(0)
+  const [localHighScore, setLocalHighScore] = useState(() => readLocalHighScore())
+  const [finalMessage, setFinalMessage] = useState('')
+  const [activeTip, setActiveTip] = useState<TutorialTip | null>(null)
+  const [playerId] = useState(() => readPlayerId())
+  const [playerInitials, setPlayerInitials] = useState(() => readPlayerInitials())
+  const [activeChallengeSlug, setActiveChallengeSlug] = useState(() => getChallengeSlugFromAddress())
+  const [challenge, setChallenge] = useState<ChallengeRecord | null>(null)
+  const [challengeLoading, setChallengeLoading] = useState(() => Boolean(getChallengeSlugFromAddress()))
+  const [challengeError, setChallengeError] = useState('')
+  const [challengeActionBusy, setChallengeActionBusy] = useState(false)
+  const [challengeCopied, setChallengeCopied] = useState(false)
+  const [challengeAttemptStatus, setChallengeAttemptStatus] = useState<ChallengeAttemptStatus>(() =>
+    getChallengeSlugFromAddress() ? readChallengeAttemptStatus(getChallengeSlugFromAddress() ?? '') : 'fresh',
+  )
 
   const simulation = useMemo(() => simulateTrajectory(currentScene, finalLoopDuration), [currentScene])
   const trailSegments = useMemo(() => getTrailSegments(simulation.samples), [simulation.samples])
@@ -133,6 +198,7 @@ function App() {
   const visibleGuesses = getEndlessGuesses(turnResults, activeGuess, phase, revealedTime)
   const visibleTargets = getEndlessTargets(turnResults, phase, revealedTime)
   const timerProgress = phase === 'guessing' ? Math.max(0, Math.min(1, timerRemaining / currentTurnSeconds)) : null
+  const challengeShareUrl = challenge ? getChallengeUrl(challenge.slug) : ''
   const playDueBounceSounds = useCallback(
     (time: number) => {
       if (time < lastSoundTimeRef.current) {
@@ -153,6 +219,7 @@ function App() {
   )
 
   const startNewRound = useCallback(() => {
+    const nextSeed = createRandomSeed()
     stepAnimationStartedAt.current = null
     guessTimerStartedAt.current = null
     activeGuessRef.current = null
@@ -160,7 +227,12 @@ function App() {
     finishedLoopAbsoluteTimeRef.current = 0
     lastSoundBounceRef.current = -1
     lastSoundTimeRef.current = 0
-    setCurrentScene(generateRandomScene(defaultGeneratorConfig, endlessGenerationBounces))
+    recordedFinishedScoreRef.current = null
+    setBoard({
+      scene: generateRandomScene(defaultGeneratorConfig, endlessGenerationBounces, nextSeed),
+      seed: nextSeed,
+      source: 'random',
+    })
     setActiveGuess(null)
     setTurnIndex(0)
     setTurnResults([])
@@ -170,7 +242,15 @@ function App() {
     setStepTime(0)
     setFinalTrailTime(0)
     setFinalScoreOffset({ x: 0, y: 0 })
+    setFinalMessage('')
+    setActiveChallengeSlug(null)
+    setChallenge(null)
+    setChallengeError('')
+    setChallengeCopied(false)
+    setChallengeAttemptStatus('fresh')
     setPhase('ready')
+    clearSeedFromAddress()
+    clearChallengeFromAddress()
   }, [])
 
   const watchOneBounceReplay = useCallback(() => {
@@ -247,7 +327,18 @@ function App() {
       return
     }
 
+    if (activeChallengeSlug) {
+      if (challengeAttemptStatus !== 'fresh') {
+        return
+      }
+
+      writeChallengeAttemptStatus(activeChallengeSlug, 'started')
+      setChallengeAttemptStatus('started')
+    }
+
     enableAudio()
+    runBestBeforeRef.current = localHighScore
+    recordedFinishedScoreRef.current = null
     activeGuessRef.current = null
     finishedLoopAbsoluteTimeRef.current = 0
     lastSoundBounceRef.current = -1
@@ -258,13 +349,94 @@ function App() {
     setHighlightedBounce(null)
     setTimerRemaining(endlessStartSeconds)
     setPauseBounceIndex(openingBounceIndex)
+    setFinalMessage('')
     stepAnimationStartedAt.current = null
     stepAnimationFromTime.current = 0
     stepAnimationToTime.current = simulation.bounces[openingBounceIndex].time
     setStepTime(0)
     setFinalTrailTime(0)
     setPhase('opening')
-  }, [enableAudio, openingBounceIndex, simulation.bounces])
+  }, [activeChallengeSlug, challengeAttemptStatus, enableAudio, localHighScore, openingBounceIndex, simulation.bounces])
+
+  const createChallengeFromRun = useCallback(() => {
+    const initials = normalizeInitials(playerInitials)
+    if (!isAllowedInitials(initials)) {
+      setChallengeError('Use 1-3 safe letters or numbers.')
+      return
+    }
+
+    setChallengeActionBusy(true)
+    setChallengeError('')
+    writePlayerInitials(initials)
+    setPlayerInitials(initials)
+
+    void createChallenge({
+      creatorInitials: initials,
+      maxScore,
+      playerId,
+      score: totalScore,
+      seed: board.seed,
+      turns: serializeTurns(turnResults),
+    }).then((nextChallenge) => {
+      setChallenge(nextChallenge)
+      setActiveChallengeSlug(nextChallenge.slug)
+      setBoard((current) => ({ ...current, source: 'challenge' }))
+      writeChallengeAttemptStatus(nextChallenge.slug, 'submitted')
+      setChallengeAttemptStatus('submitted')
+      const url = getChallengeUrl(nextChallenge.slug)
+      void copyText(url, 'Challenge link')
+      setChallengeCopied(true)
+      window.setTimeout(() => setChallengeCopied(false), 1800)
+      setChallengeActionBusy(false)
+      pushChallengeAddress(nextChallenge.slug)
+    }).catch((error: unknown) => {
+      setChallengeError(error instanceof Error ? error.message : 'Could not create challenge.')
+      setChallengeActionBusy(false)
+    })
+  }, [board.seed, maxScore, playerId, playerInitials, totalScore, turnResults])
+
+  const submitCurrentChallengeScore = useCallback(() => {
+    if (!activeChallengeSlug) {
+      return
+    }
+
+    const initials = normalizeInitials(playerInitials)
+    if (!isAllowedInitials(initials)) {
+      setChallengeError('Use 1-3 safe letters or numbers.')
+      return
+    }
+
+    setChallengeActionBusy(true)
+    setChallengeError('')
+    writePlayerInitials(initials)
+    setPlayerInitials(initials)
+
+    void submitChallengeScore(activeChallengeSlug, {
+      initials,
+      maxScore,
+      playerId,
+      score: totalScore,
+      turns: serializeTurns(turnResults),
+    }).then((nextChallenge) => {
+      setChallenge(nextChallenge)
+      writeChallengeAttemptStatus(activeChallengeSlug, 'submitted')
+      setChallengeAttemptStatus('submitted')
+      setChallengeActionBusy(false)
+    }).catch((error: unknown) => {
+      setChallengeError(error instanceof Error ? error.message : 'Could not submit score.')
+      setChallengeActionBusy(false)
+    })
+  }, [activeChallengeSlug, maxScore, playerId, playerInitials, totalScore, turnResults])
+
+  const copyChallengeLink = useCallback(() => {
+    if (!challenge) {
+      return
+    }
+
+    void copyText(getChallengeUrl(challenge.slug), 'Challenge link')
+    setChallengeCopied(true)
+    window.setTimeout(() => setChallengeCopied(false), 1800)
+  }, [challenge])
 
   const finishTurn = useCallback(() => {
     if (phase !== 'guessing' || !currentTarget) {
@@ -502,6 +674,145 @@ function App() {
   }, [currentTurnSeconds, finishTurn, paused, phase, turnIndex])
 
   useEffect(() => {
+    if (!activeChallengeSlug) {
+      const timeout = window.setTimeout(() => {
+        setChallenge(null)
+        setChallengeLoading(false)
+        setChallengeError('')
+        setChallengeAttemptStatus('fresh')
+      }, 0)
+      return () => window.clearTimeout(timeout)
+    }
+
+    if (challenge?.slug === activeChallengeSlug) {
+      const timeout = window.setTimeout(() => {
+        setChallengeLoading(false)
+        setChallengeAttemptStatus(readChallengeAttemptStatus(activeChallengeSlug))
+      }, 0)
+      return () => window.clearTimeout(timeout)
+    }
+
+    let cancelled = false
+    const loadingTimeout = window.setTimeout(() => {
+      setChallengeLoading(true)
+      setChallengeError('')
+    }, 0)
+
+    void getChallenge(activeChallengeSlug).then((loadedChallenge) => {
+      if (cancelled) {
+        return
+      }
+
+      setChallenge(loadedChallenge)
+      setBoard({
+        scene: generateRandomScene(defaultGeneratorConfig, endlessGenerationBounces, loadedChallenge.seed),
+        seed: loadedChallenge.seed,
+        source: 'challenge',
+      })
+      setActiveGuess(null)
+      setTurnIndex(0)
+      setTurnResults([])
+      setHighlightedBounce(null)
+      setTimerRemaining(endlessStartSeconds)
+      setPauseBounceIndex(0)
+      setStepTime(0)
+      setFinalTrailTime(0)
+      setFinalScoreOffset({ x: 0, y: 0 })
+      setFinalMessage('')
+      setChallengeAttemptStatus(readChallengeAttemptStatus(activeChallengeSlug))
+      setChallengeLoading(false)
+      setPhase('ready')
+    }).catch((error: unknown) => {
+      if (cancelled) {
+        return
+      }
+
+      setChallengeError(error instanceof Error ? error.message : 'Challenge not found.')
+      setChallengeLoading(false)
+    })
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(loadingTimeout)
+    }
+  }, [activeChallengeSlug, challenge?.slug])
+
+  useEffect(() => {
+    if (!activeTip) {
+      return
+    }
+
+    const timeout = window.setTimeout(() => setActiveTip(null), 4200)
+    return () => window.clearTimeout(timeout)
+  }, [activeTip])
+
+  useEffect(() => {
+    if (phase === 'guessing' && turnResults.length === 0) {
+      showTutorialTip(setActiveTip, {
+        key: 'firstPrediction',
+        text: 'Guess where the next bounce lands.',
+      })
+    }
+  }, [phase, turnResults.length])
+
+  useEffect(() => {
+    const latestResult = turnResults[turnResults.length - 1]
+    if (!latestResult) {
+      return
+    }
+
+    if (latestResult.points <= 0) {
+      showTutorialTip(setActiveTip, {
+        key: 'firstMiss',
+        text: 'A miss burns one life. You get three.',
+      })
+      return
+    }
+
+    if (latestResult.maxPoints >= 100) {
+      showTutorialTip(setActiveTip, {
+        key: 'longPath',
+        text: 'Big travel means bigger point chances.',
+      })
+      return
+    }
+
+    showTutorialTip(setActiveTip, {
+      key: 'firstScore',
+      text: 'Guess close to the bounce to score more points.',
+    })
+  }, [turnResults])
+
+  useEffect(() => {
+    if (phase !== 'finished') {
+      return
+    }
+
+    const runKey = `${board.seed}:${turnResults.length}:${totalScore}`
+    if (recordedFinishedScoreRef.current === runKey) {
+      return
+    }
+
+    recordedFinishedScoreRef.current = runKey
+    const timeout = window.setTimeout(() => {
+      const previousBest = runBestBeforeRef.current
+      const nextBest = Math.max(localHighScore, totalScore)
+      if (nextBest > localHighScore) {
+        writeLocalHighScore(nextBest)
+        setLocalHighScore(nextBest)
+      }
+
+      setFinalMessage(getFinalMessage(totalScore, maxScore, previousBest, turnResults))
+      showTutorialTip(setActiveTip, {
+        key: 'finishedRun',
+        text: 'New Game rolls a fresh board. Copy Link keeps this one.',
+      })
+    }, 0)
+
+    return () => window.clearTimeout(timeout)
+  }, [board.seed, localHighScore, maxScore, phase, totalScore, turnResults])
+
+  useEffect(() => {
     const canvas = canvasRef.current
     const context = canvas?.getContext('2d')
 
@@ -560,6 +871,9 @@ function App() {
 
         <div className="status-strip" aria-live="polite">
           <span>{getPhaseLabel(phase)}</span>
+          {board.source === 'challenge' && <span>challenge</span>}
+          {board.source === 'url' && <span>linked board</span>}
+          <strong>Best {localHighScore}</strong>
           <strong>
             Lives {Math.max(0, endlessLives - endlessMisses)}/{endlessLives}
           </strong>
@@ -571,11 +885,46 @@ function App() {
           {displayScore !== null && <span>{formatScore(displayScore, maxScore)}</span>}
         </div>
 
+        {activeTip && (
+          <div className="tutorial-tip" role="status">
+            <span>{activeTip.text}</span>
+          </div>
+        )}
+
         {phase === 'ready' && (
           <div className="play-overlay">
-            <button type="button" onClick={startGame}>
-              Play
-            </button>
+            {challengeLoading ? (
+              <div className="ready-panel">
+                <p className="eyebrow">challenge</p>
+                <strong>Loading board</strong>
+              </div>
+            ) : challengeError ? (
+              <div className="ready-panel">
+                <p className="eyebrow">challenge</p>
+                <strong>{challengeError}</strong>
+                <button type="button" onClick={startNewRound}>
+                  New Game
+                </button>
+              </div>
+            ) : activeChallengeSlug && challengeAttemptStatus !== 'fresh' ? (
+              <div className="ready-panel">
+                <p className="eyebrow">challenge locked</p>
+                <strong>You already used this attempt.</strong>
+                {challenge && <ChallengeLeaderboard challenge={challenge} />}
+                <div className="score-actions">
+                  <button type="button" onClick={copyChallengeLink}>
+                    {challengeCopied ? 'Copied' : 'Copy Link'}
+                  </button>
+                  <button type="button" className="secondary" onClick={startNewRound}>
+                    New Game
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" onClick={startGame}>
+                Play
+              </button>
+            )}
           </div>
         )}
 
@@ -610,9 +959,24 @@ function App() {
                 onHover={setHighlightedBounce}
                 results={visibleScoreResults}
               />
+              {finalMessage && <p className="final-score-note">{finalMessage}</p>}
+              <ChallengePanel
+                actionBusy={challengeActionBusy}
+                attemptStatus={challengeAttemptStatus}
+                challenge={challenge}
+                copied={challengeCopied}
+                error={challengeError}
+                initials={playerInitials}
+                isChallengeRun={Boolean(activeChallengeSlug)}
+                onCopy={copyChallengeLink}
+                onCreate={createChallengeFromRun}
+                onInitialsChange={setPlayerInitials}
+                onSubmit={submitCurrentChallengeScore}
+                shareUrl={challengeShareUrl}
+              />
               <div className="score-actions">
                 <button type="button" onClick={startNewRound}>
-                  New Round
+                  New Game
                 </button>
                 <button
                   type="button"
@@ -669,6 +1033,249 @@ function App() {
       </section>
     </main>
   )
+}
+
+function createInitialBoard(): BoardState {
+  const seedFromAddress = getSeedFromAddress()
+  const seed = seedFromAddress ?? createRandomSeed()
+
+  return {
+    scene: generateRandomScene(defaultGeneratorConfig, endlessGenerationBounces, seed),
+    seed,
+    source: seedFromAddress === null ? 'random' : 'url',
+  }
+}
+
+function getSeedFromAddress() {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  const rawSeed = new URLSearchParams(window.location.search).get(seedQueryParam)
+  if (rawSeed === null) {
+    return null
+  }
+
+  const seed = Number(rawSeed)
+  if (!Number.isSafeInteger(seed) || seed < 0) {
+    return null
+  }
+
+  return seed >>> 0
+}
+
+function getChallengeSlugFromAddress() {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  const slugFromQuery = new URLSearchParams(window.location.search).get(challengeQueryParam)
+  if (slugFromQuery) {
+    return cleanChallengeSlug(slugFromQuery)
+  }
+
+  const match = window.location.pathname.match(/^\/c\/([a-z0-9-]+)/i)
+  return match ? cleanChallengeSlug(match[1]) : null
+}
+
+function clearSeedFromAddress() {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  const url = new URL(window.location.href)
+  if (!url.searchParams.has(seedQueryParam)) {
+    return
+  }
+
+  url.searchParams.delete(seedQueryParam)
+  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+}
+
+function clearChallengeFromAddress() {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  const url = new URL(window.location.href)
+  if (!url.searchParams.has(challengeQueryParam) && !url.pathname.startsWith('/c/')) {
+    return
+  }
+
+  url.searchParams.delete(challengeQueryParam)
+  window.history.replaceState({}, '', `/${url.search}${url.hash}`)
+}
+
+function pushChallengeAddress(slug: string) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  window.history.replaceState({}, '', `/c/${slug}`)
+}
+
+function cleanChallengeSlug(slug: string) {
+  const cleaned = slug.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 32)
+  return cleaned || null
+}
+
+function readLocalHighScore() {
+  try {
+    const value = Number(window.localStorage.getItem(localHighScoreKey))
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
+  } catch {
+    return 0
+  }
+}
+
+function writeLocalHighScore(score: number) {
+  try {
+    window.localStorage.setItem(localHighScoreKey, String(Math.max(0, Math.floor(score))))
+  } catch {
+    // Local storage can be disabled; the game should keep playing.
+  }
+}
+
+function readPlayerId() {
+  try {
+    const existing = window.localStorage.getItem(playerIdKey)
+    if (existing) {
+      return existing
+    }
+
+    const next = crypto.randomUUID()
+    window.localStorage.setItem(playerIdKey, next)
+    return next
+  } catch {
+    return crypto.randomUUID()
+  }
+}
+
+function readPlayerInitials() {
+  try {
+    return normalizeInitials(window.localStorage.getItem(playerInitialsKey) ?? fallbackInitials) || fallbackInitials
+  } catch {
+    return fallbackInitials
+  }
+}
+
+function writePlayerInitials(initials: string) {
+  try {
+    window.localStorage.setItem(playerInitialsKey, normalizeInitials(initials))
+  } catch {
+    // Optional player convenience only.
+  }
+}
+
+function readChallengeAttemptStatus(slug: string): ChallengeAttemptStatus {
+  try {
+    const value = window.localStorage.getItem(`${challengeAttemptPrefix}${slug}`)
+    return value === 'started' || value === 'submitted' ? value : 'fresh'
+  } catch {
+    return 'fresh'
+  }
+}
+
+function writeChallengeAttemptStatus(slug: string, status: ChallengeAttemptStatus) {
+  try {
+    window.localStorage.setItem(`${challengeAttemptPrefix}${slug}`, status)
+  } catch {
+    // One-browser attempt limits are best-effort without sign-in.
+  }
+}
+
+function cleanInitialsInput(input: string) {
+  return normalizeInitials(input)
+}
+
+function normalizeInitials(input: string) {
+  return input.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3)
+}
+
+function isAllowedInitials(initials: string) {
+  const blocked = new Set(['ASS', 'KKK', 'NZI', 'SEX', 'XXX'])
+  return initials.length >= 1 && initials.length <= 3 && !blocked.has(initials)
+}
+
+function serializeTurns(results: TurnResult[]) {
+  return results.map((result) => ({
+    guess: result.guess ? { x: result.guess.x, y: result.guess.y } : null,
+    target: {
+      x: result.target.x,
+      y: result.target.y,
+      time: result.target.time,
+      source: result.target.source,
+    },
+    points: result.points,
+    maxPoints: result.maxPoints,
+  }))
+}
+
+async function copyText(text: string, label: string) {
+  if (!navigator.clipboard) {
+    window.prompt(label, text)
+    return
+  }
+
+  await navigator.clipboard.writeText(text)
+}
+
+function showTutorialTip(setTip: (tip: TutorialTip | null) => void, tip: TutorialTip) {
+  try {
+    const storageKey = `${tutorialStoragePrefix}${tip.key}`
+    if (window.localStorage.getItem(storageKey)) {
+      return
+    }
+
+    window.localStorage.setItem(storageKey, 'seen')
+  } catch {
+    // If storage is unavailable, show the tip without making persistence a dependency.
+  }
+
+  setTip(tip)
+}
+
+function getFinalMessage(score: number, maxScore: number, previousBest: number, results: TurnResult[]) {
+  const misses = getEndlessMisses(results)
+  const efficiency = maxScore > 0 ? score / maxScore : 0
+
+  if (score > previousBest && score > 0 && score < 500) {
+    return previousBest > 0 ? `New best by ${score - previousBest}. But can you hit 500?` : 'Play Ball!'
+  }
+
+  if (score > previousBest && score > 0 && score < 1000) {
+    return previousBest > 0 ? `New best by ${score - previousBest}. A score of 1000 is calling your name. Get there!` : 'First score on the board.'
+  }
+
+  if (score > previousBest && score > 0 && score > 1000 && previousBest < 1000) {
+    return previousBest > 0 ? `New best by ${score - previousBest}. You broke the barrier. Incredible.` : 'First score on the board.'
+  }
+
+  if (score > previousBest && score > 0) {
+    return previousBest > 0 ? `New best by ${score - previousBest}. You're too good...` : 'First score on the board.'
+  }
+
+  if (previousBest > 0 && score >= previousBest * 0.9) {
+    return 'Almost there. It just takes a little more ball knowledge.'
+  }
+
+  if (efficiency >= 0.72 && misses === 0) {
+    return 'You were seeing angles.'
+  }
+
+  if (misses >= endlessLives) {
+    return getRandomGameOverMessage()
+  }
+
+  if (score <= 0) {
+    return 'Physics had jokes today.'
+  }
+
+  return 'Keep calibrating your physics engine.'
+}
+
+function getRandomGameOverMessage() {
+  return gameOverMessages[Math.floor(Math.random() * gameOverMessages.length)]
 }
 
 type DrawOptions = {
@@ -1224,6 +1831,102 @@ function ScorePanel({ label, maxScore, onHover, score, results }: ScorePanelProp
           </span>
         ))}
       </div>
+    </div>
+  )
+}
+
+type ChallengePanelProps = {
+  actionBusy: boolean
+  attemptStatus: ChallengeAttemptStatus
+  challenge: ChallengeRecord | null
+  copied: boolean
+  error: string
+  initials: string
+  isChallengeRun: boolean
+  onCopy: () => void
+  onCreate: () => void
+  onInitialsChange: (initials: string) => void
+  onSubmit: () => void
+  shareUrl: string
+}
+
+function ChallengePanel({
+  actionBusy,
+  attemptStatus,
+  challenge,
+  copied,
+  error,
+  initials,
+  isChallengeRun,
+  onCopy,
+  onCreate,
+  onInitialsChange,
+  onSubmit,
+  shareUrl,
+}: ChallengePanelProps) {
+  const normalizedInitials = normalizeInitials(initials)
+  const initialsAllowed = isAllowedInitials(normalizedInitials)
+  const canSubmitScore = isChallengeRun && attemptStatus === 'started'
+  const canCreateChallenge = !isChallengeRun && !challenge
+
+  return (
+    <div className="challenge-panel">
+      <div className="challenge-panel-heading">
+        <p className="eyebrow">{isChallengeRun ? 'friend challenge' : 'share challenge'}</p>
+        <strong>{challenge ? `Board ${challenge.slug}` : 'Make this board beatable'}</strong>
+      </div>
+
+      {(canCreateChallenge || canSubmitScore) && (
+        <label className="initials-field">
+          <span>Initials</span>
+          <input
+            aria-label="Leaderboard initials"
+            maxLength={3}
+            onChange={(event) => onInitialsChange(cleanInitialsInput(event.target.value))}
+            value={initials}
+          />
+        </label>
+      )}
+
+      {error && <p className="challenge-error">{error}</p>}
+
+      {canCreateChallenge && (
+        <button type="button" disabled={!initialsAllowed || actionBusy} onClick={onCreate}>
+          {actionBusy ? 'Creating' : 'Create Challenge'}
+        </button>
+      )}
+
+      {canSubmitScore && (
+        <button type="button" disabled={!initialsAllowed || actionBusy} onClick={onSubmit}>
+          {actionBusy ? 'Submitting' : 'Submit Score'}
+        </button>
+      )}
+
+      {challenge && (
+        <>
+          <div className="challenge-share-row">
+            <span>{shareUrl}</span>
+            <button type="button" className="secondary compact" onClick={onCopy}>
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+          <ChallengeLeaderboard challenge={challenge} />
+        </>
+      )}
+    </div>
+  )
+}
+
+function ChallengeLeaderboard({ challenge }: { challenge: ChallengeRecord }) {
+  return (
+    <div className="challenge-leaderboard">
+      {challenge.leaderboard.slice(0, 8).map((entry, index) => (
+        <span className="challenge-entry" key={entry.id}>
+          <strong>{index + 1}</strong>
+          <span>{entry.initials}</span>
+          <span>{entry.score}/{entry.maxScore}</span>
+        </span>
+      ))}
     </div>
   )
 }

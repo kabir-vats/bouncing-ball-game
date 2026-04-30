@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/c/:slug",
+      "destination": "/api/share/:slug"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
+  ]
+}
