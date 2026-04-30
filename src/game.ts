@@ -63,8 +63,7 @@ type ObstacleBounds = {
 }
 
 export const observeDuration = 1.15
-export const defaultPredictionCount = 5
-export const maximumPredictionCount = 8
+export const defaultRequiredBounces = 18
 
 export const defaultGeneratorConfig: GeneratorConfig = {
   platforms: 7,
@@ -112,7 +111,7 @@ const obstaclePadding = 18
 
 export function generateRandomScene(
   config: GeneratorConfig,
-  requiredBounces = defaultPredictionCount,
+  requiredBounces = defaultRequiredBounces,
   seed = crypto.getRandomValues(new Uint32Array(1))[0],
 ): GameScene {
   const random = createRandom(seed)
@@ -121,7 +120,7 @@ export function generateRandomScene(
   for (let attempt = 0; attempt < 90; attempt += 1) {
     const candidate = buildRandomScene(config, random)
     const simulation = simulateTrajectory(candidate)
-    const upcoming = getUpcomingBounces(simulation.bounces, observeDuration, requiredBounces)
+    const upcoming = getBouncesAfterTime(simulation.bounces, observeDuration, requiredBounces)
     const obstacleBounces = upcoming.filter((bounce) => bounce.source === 'obstacle').length
 
     fallback = candidate
@@ -207,26 +206,8 @@ export function getStateAt(samples: TrajectorySample[], time: number): Trajector
   return samples[samples.length - 1]
 }
 
-export function getUpcomingBounces(bounces: Bounce[], afterTime: number, count = defaultPredictionCount) {
+export function getBouncesAfterTime(bounces: Bounce[], afterTime: number, count = defaultRequiredBounces) {
   return bounces.filter((bounce) => bounce.time > afterTime).slice(0, count)
-}
-
-export function scoreGuesses(guesses: Point[], targets: Point[]) {
-  return targets.map((target, index) => {
-    const guess = guesses[index]
-    const distance = guess ? getDistance(guess, target) : Infinity
-    const points = guess ? Math.max(0, Math.round(100 - distance * 0.85)) : 0
-
-    return {
-      index,
-      distance,
-      points,
-    }
-  })
-}
-
-export function getTotalScore(guesses: Point[], targets: Point[]) {
-  return scoreGuesses(guesses, targets).reduce((total, result) => total + result.points, 0)
 }
 
 function buildRandomScene(config: GeneratorConfig, random: () => number): GameScene {
