@@ -132,37 +132,68 @@ canvas {
 
 .score-breakdown {
   display: grid;
-  gap: 4px;
+  gap: 2px;
+  max-height: min(36vh, 300px);
+  overflow-y: auto;
+  padding-right: 2px;
+  pointer-events: auto;
   color: var(--muted);
-  font-size: 0.82rem;
-  font-weight: 750;
+  font-size: 0.8rem;
+  font-weight: 650;
+  scrollbar-color: rgba(103, 232, 249, 0.62) rgba(15, 23, 42, 0.4);
+  scrollbar-width: thin;
+}
+
+.score-breakdown::-webkit-scrollbar {
+  width: 8px;
+}
+
+.score-breakdown::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.score-breakdown::-webkit-scrollbar-thumb {
+  border: 2px solid rgba(15, 23, 42, 0.72);
+  border-radius: 999px;
+  background: rgba(103, 232, 249, 0.68);
 }
 
 .score-line {
-  border-left: 3px solid currentColor;
-  border-radius: 8px;
-  padding: 3px 8px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: 6px;
+  padding: 3px 2px;
   text-align: left;
 }
 
-.score-line.great {
-  color: #86efac;
-  background: rgba(34, 197, 94, 0.12);
+.score-line::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: currentColor;
 }
 
-.score-line.good {
-  color: #67e8f9;
-  background: rgba(103, 232, 249, 0.1);
+.life-pips {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
 }
 
-.score-line.okay {
-  color: #facc15;
-  background: rgba(250, 204, 21, 0.1);
+.life-pips i {
+  width: 7px;
+  height: 7px;
+  border: 1px solid rgba(148, 163, 184, 0.44);
+  border-radius: 50%;
 }
 
-.score-line.miss {
-  color: #fda4af;
-  background: rgba(244, 63, 94, 0.12);
+.life-pips i.alive {
+  border-color: #67e8f9;
+  background: #67e8f9;
 }
 
 .final-score-menu {
@@ -181,11 +212,12 @@ canvas {
   display: grid;
   gap: 10px;
   min-width: min(320px, calc(100vw - 48px));
+  max-width: min(420px, calc(100vw - 48px));
   border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 26px;
-  padding: 22px;
-  background: rgba(2, 6, 23, 0.86);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.34);
+  border-radius: 18px;
+  padding: 18px;
+  background: rgba(2, 6, 23, 0.84);
+  pointer-events: auto;
 }
 
 .final-score-menu .score-panel strong {

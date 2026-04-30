@@ -166,7 +166,7 @@ export function simulateTrajectory(gameScene: GameScene, duration = 10, dt = sam
       const longEnough = time - lastBounceAt > minimumBounceGap
       const source = wallBounce ? 'wall' : 'obstacle'
 
-      if (longEnough || farEnough) {
+      if (longEnough || farEnough || wallBounce) {
         bounces.push({
           ...bouncePoint,
           time,

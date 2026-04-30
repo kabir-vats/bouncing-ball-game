@@ -8,7 +8,6 @@ import {
   defaultGeneratorConfig,
   defaultPredictionCount,
   generateRandomScene,
-  getStateAt,
   getTotalScore,
   getUpcomingBounces,
   maximumPredictionCount,
@@ -34,6 +33,8 @@ type TurnResult = {
   guess: Point | null
   target: Bounce
   distance: number
+  pathLength: number
+  maxPoints: number
   points: number
   timedOut: boolean
 }
@@ -42,12 +43,13 @@ type LabeledTurnResult = TurnResult & {
 }
 type LabeledPoint = Point & {
   label?: number
+  score?: number
   tone?: GuessTone
 }
 type LabeledBounce = Bounce & {
   label?: number
 }
-type GuessTone = 'tentative' | 'miss' | 'okay' | 'great'
+type GuessTone = 'tentative'
 
 const replayDuration = 7.2
 const boardAccent = '#67e8f9'
@@ -61,6 +63,13 @@ const endlessTimerDecay = 0.5
 const endlessGenerationBounces = 18
 const endlessLives = 3
 const finalLoopDuration = 180
+const scoreDistanceFactor = 0.18
+const minimumScoreTolerance = 28
+const maximumScoreTolerance = 120
+const minimumBounceMaxScore = 25
+const maximumBounceMaxScore = 200
+const maxScoreLogScale = 420
+const maxTrailSegments = 900
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -112,14 +121,14 @@ function App() {
   const oneBouncePauseTime = simulation.bounces[pauseBounceIndex]?.time ?? 0
   const finalPredictionTarget = turnResults[turnResults.length - 1]?.target
   const currentTurnSeconds = getTurnSeconds(mode, turnIndex, guessSeconds)
-  const oneBounceScore = mode === 'endless' ? getEndlessScore(turnResults) : turnResults.reduce((total, result) => total + result.points, 0)
+  const oneBounceScore = turnResults.reduce((total, result) => total + result.points, 0)
   const endlessMisses = getEndlessMisses(turnResults)
   const oneBounceDisplayScore =
     isPredictionModeActive && phase === 'score-replay'
-      ? getAnimatedReplayScore(turnResults, stepTime, mode)
+      ? getAnimatedReplayScore(turnResults, stepTime)
       : oneBounceScore
   const visibleScoreResults = getVisibleScoreResults(turnResults, phase, stepTime)
-  const oneBounceMaxScore = mode === 'endless' ? null : turnCount * 100
+  const oneBounceMaxScore = mode === 'endless' ? null : getPredictionMaxScore(turnResults, turnCount)
   const finalTarget = targetBounces[targetBounces.length - 1]
   const revealedTime =
     mode === 'one-bounce'
@@ -196,6 +205,8 @@ function App() {
     stepAnimationStartedAt.current = null
     stepAnimationFromTime.current = 0
     stepAnimationToTime.current = turnResults[turnResults.length - 1].target.time + 0.8
+    lastSoundBounceRef.current = -1
+    lastSoundTimeRef.current = 0
     setStepTime(0)
     setPhase('score-replay')
   }, [turnResults])
@@ -266,7 +277,8 @@ function App() {
     }
 
     const timeoutGuess = activeGuessRef.current
-    setTurnResults((current) => [...current, scoreOneBounceTurn(timeoutGuess, oneBounceTarget, !timeoutGuess)])
+    const pathLength = getTrajectoryDistance(simulation.samples, oneBouncePauseTime, oneBounceTarget.time)
+    setTurnResults((current) => [...current, scoreOneBounceTurn(timeoutGuess, oneBounceTarget, !timeoutGuess, pathLength)])
     activeGuessRef.current = null
     setActiveGuess(null)
     stepAnimationStartedAt.current = null
@@ -275,7 +287,7 @@ function App() {
     guessTimerStartedAt.current = null
     setStepTime(oneBouncePauseTime)
     setPhase('turn-reveal')
-  }, [mode, oneBouncePauseTime, oneBounceTarget, phase])
+  }, [mode, oneBouncePauseTime, oneBounceTarget, phase, simulation.samples])
 
   const handleBounceLimitChange = useCallback(
     (event: ChangeEvent<HTMLSelectElement>) => {
@@ -530,12 +542,12 @@ function App() {
     }
     lastSoundTimeRef.current = revealedTime
 
-    const currentBounceIndex = simulation.bounces.findLastIndex((bounce) => bounce.time <= revealedTime)
+    const currentBounceIndex = getBounceIndexAtOrBefore(simulation.bounces, revealedTime)
     if (currentBounceIndex > lastSoundBounceRef.current) {
       const bounce = simulation.bounces[currentBounceIndex]
       lastSoundBounceRef.current = currentBounceIndex
 
-      if (bounce && revealedTime - bounce.time < 0.05) {
+      if (bounce) {
         playBounceSound(audioContextRef.current, bounce.source)
       }
     }
@@ -621,11 +633,18 @@ function App() {
           <span>{getPhaseLabel(phase)}</span>
           <strong>
             {mode === 'one-bounce'
-                ? `Turn ${Math.min(turnIndex + 1, turnCount)}/${turnCount}`
-                : mode === 'endless'
+              ? `Turn ${Math.min(turnIndex + 1, turnCount)}/${turnCount}`
+              : mode === 'endless'
                   ? `Lives ${Math.max(0, endlessLives - endlessMisses)}/${endlessLives}`
                   : `${guesses.length}/${targetBounces.length}`}
           </strong>
+          {mode === 'endless' && (
+            <span className="life-pips" aria-label={`${Math.max(0, endlessLives - endlessMisses)} lives remaining`}>
+              {Array.from({ length: endlessLives }, (_, index) => (
+                <i className={index < endlessLives - endlessMisses ? 'alive' : ''} key={index} />
+              ))}
+            </span>
+          )}
           {displayScore !== null && <span>{formatScore(displayScore, maxScore)}</span>}
         </div>
 
@@ -862,7 +881,7 @@ function App() {
                     {formatScore(oneBounceScore, oneBounceMaxScore)}
                   </strong>
                   {turnResults.map((result, index) => (
-                    <span className={`score-line ${getScoreTone(result.points)}`} key={`${result.target.time}-${index}`}>
+                    <span className="score-line" style={getScoreStyle(result.points, result.maxPoints)} key={`${result.target.time}-${index}`}>
                       Bounce {index + 1}: {result.points > 0 ? `${result.points} pts` : 'miss'}
                     </span>
                   ))}
@@ -876,7 +895,7 @@ function App() {
                     {score}/{maxScore}
                   </strong>
                   {scoringRows.map((row) => (
-                    <span className={`score-line ${getScoreTone(row.points)}`} key={row.index}>
+                    <span className="score-line" style={getScoreStyle(row.points)} key={row.index}>
                       Bounce {row.index + 1}: {row.points > 0 ? `${row.points} pts` : 'miss'}
                     </span>
                   ))}
@@ -918,12 +937,12 @@ function prepareCanvas(canvas: HTMLCanvasElement, context: CanvasRenderingContex
 
 function drawScene(context: CanvasRenderingContext2D, options: DrawOptions) {
   const { bounces, gameScene, guesses, phase, rippleAge, samples, targetBounces, timerProgress, time } = options
-  const state = getStateAt(samples, time)
-  const visibleSamples = samples.filter((sample) => sample.time <= time)
+  const state = getStateAtFast(samples, time)
+  const sampleIndex = getSampleIndexAtOrBefore(samples, time)
 
   context.clearRect(0, 0, gameScene.width, gameScene.height)
   drawBoard(context, gameScene)
-  drawTrail(context, visibleSamples)
+  drawTrail(context, samples, sampleIndex)
   drawObstacles(context, gameScene)
 
   if (rippleAge !== null && targetBounces.length > 0) {
@@ -933,16 +952,85 @@ function drawScene(context: CanvasRenderingContext2D, options: DrawOptions) {
   if (
     phase === 'scored' ||
     phase === 'replay' ||
-    phase === 'turn-reveal' ||
-    phase === 'end-ripple' ||
     phase === 'score-replay' ||
     phase === 'finished'
   ) {
-    drawTargets(context, targetBounces.filter((bounce) => bounce.time <= time || phase === 'scored'))
+    drawTargets(context, targetBounces.filter((bounce) => bounce.time <= time || phase === 'scored' || phase === 'finished'))
   }
 
   drawGuesses(context, guesses)
   drawBall(context, state, gameScene.ballRadius, timerProgress === null ? getImpactAge(bounces, time) : null, timerProgress)
+}
+
+function getStateAtFast(samples: DrawOptions['samples'], time: number) {
+  if (time <= samples[0].time) {
+    return samples[0]
+  }
+
+  const index = getSampleIndexAtOrAfter(samples, time)
+  const current = samples[index]
+  const previous = samples[Math.max(0, index - 1)]
+
+  if (!current || current.time === previous.time) {
+    return samples[samples.length - 1]
+  }
+
+  const progress = (time - previous.time) / (current.time - previous.time)
+  return {
+    time,
+    x: previous.x + (current.x - previous.x) * progress,
+    y: previous.y + (current.y - previous.y) * progress,
+    vx: previous.vx + (current.vx - previous.vx) * progress,
+    vy: previous.vy + (current.vy - previous.vy) * progress,
+  }
+}
+
+function getSampleIndexAtOrBefore(samples: DrawOptions['samples'], time: number) {
+  let low = 0
+  let high = samples.length - 1
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2)
+    if (samples[mid].time <= time) {
+      low = mid + 1
+    } else {
+      high = mid - 1
+    }
+  }
+
+  return Math.max(0, high)
+}
+
+function getSampleIndexAtOrAfter(samples: DrawOptions['samples'], time: number) {
+  let low = 0
+  let high = samples.length - 1
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2)
+    if (samples[mid].time < time) {
+      low = mid + 1
+    } else {
+      high = mid - 1
+    }
+  }
+
+  return Math.min(samples.length - 1, low)
+}
+
+function getBounceIndexAtOrBefore(bounces: Bounce[], time: number) {
+  let low = 0
+  let high = bounces.length - 1
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2)
+    if (bounces[mid].time <= time) {
+      low = mid + 1
+    } else {
+      high = mid - 1
+    }
+  }
+
+  return high
 }
 
 function drawBoard(context: CanvasRenderingContext2D, gameScene: GameScene) {
@@ -1042,19 +1130,27 @@ function drawRipple(context: CanvasRenderingContext2D, gameScene: GameScene, ori
   context.restore()
 }
 
-function drawTrail(context: CanvasRenderingContext2D, samples: DrawOptions['samples']) {
-  if (samples.length < 2) {
+function drawTrail(context: CanvasRenderingContext2D, samples: DrawOptions['samples'], endIndex: number) {
+  if (samples.length < 2 || endIndex < 1) {
     return
   }
 
+  const startIndex = 0
+  const stride = Math.max(1, Math.ceil((endIndex - startIndex) / maxTrailSegments))
+
   context.beginPath()
-  samples.forEach((sample, index) => {
-    if (index === 0) {
+  for (let index = startIndex; index <= endIndex; index += stride) {
+    const sample = samples[index]
+    if (index === startIndex) {
       context.moveTo(sample.x, sample.y)
-      return
+      continue
     }
     context.lineTo(sample.x, sample.y)
-  })
+  }
+  if ((endIndex - startIndex) % stride !== 0) {
+    const finalSample = samples[endIndex]
+    context.lineTo(finalSample.x, finalSample.y)
+  }
   context.strokeStyle = '#38bdf8'
   context.globalAlpha = 0.42
   context.lineWidth = 3
@@ -1112,7 +1208,7 @@ function drawBall(
 
 function drawGuesses(context: CanvasRenderingContext2D, guesses: LabeledPoint[]) {
   guesses.forEach((guess, index) => {
-    const colors = getGuessColors(guess.tone)
+    const colors = getGuessColors(guess.tone, guess.score)
     context.beginPath()
     context.arc(guess.x, guess.y, 15, 0, Math.PI * 2)
     context.strokeStyle = colors.stroke
@@ -1151,15 +1247,26 @@ type ScorePanelProps = {
 }
 
 function ScorePanel({ label, maxScore, score, results }: ScorePanelProps) {
+  const breakdownRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const breakdown = breakdownRef.current
+    if (!breakdown) {
+      return
+    }
+
+    breakdown.scrollTop = breakdown.scrollHeight
+  }, [results.length, score])
+
   return (
     <div className="score-panel">
       <p className="eyebrow">{label}</p>
       <strong>
         {formatScore(score, maxScore)}
       </strong>
-      <div className="score-breakdown">
+      <div className="score-breakdown" ref={breakdownRef}>
         {results.map((result, index) => (
-          <span className={`score-line ${getScoreTone(result.points)}`} key={`${result.target.time}-${index}`}>
+          <span className="score-line" style={getScoreStyle(result.points, result.maxPoints)} key={`${result.target.time}-${index}`}>
             Bounce {result.label}: {result.points > 0 ? `${result.points} pts` : 'miss'}
           </span>
         ))}
@@ -1282,12 +1389,16 @@ function getOneBounceVisibleTime(phase: Phase, stepTime: number, pauseTime: numb
   return pauseTime
 }
 
-function scoreOneBounceTurn(guess: Point | null, target: Bounce, timedOut: boolean): TurnResult {
+function scoreOneBounceTurn(guess: Point | null, target: Bounce, timedOut: boolean, pathLength: number): TurnResult {
+  const maxPoints = getBounceMaxScore(pathLength)
+
   if (!guess) {
     return {
       guess,
       target,
       distance: Infinity,
+      pathLength,
+      maxPoints,
       points: 0,
       timedOut,
     }
@@ -1298,7 +1409,9 @@ function scoreOneBounceTurn(guess: Point | null, target: Bounce, timedOut: boole
     guess,
     target,
     distance,
-    points: Math.max(0, Math.round(100 - distance * 0.85)),
+    pathLength,
+    maxPoints,
+    points: getNormalizedBounceScore(distance, pathLength, maxPoints),
     timedOut,
   }
 }
@@ -1310,7 +1423,14 @@ function getOneBounceGuesses(results: TurnResult[], activeGuess: Point | null, p
     }
 
     const revealed = phase === 'score-replay' || phase === 'finished' || result.target.time <= visibleTime
-    return [{ ...result.guess, label: index + 1, tone: revealed ? getGuessTone(result.points) : 'tentative' }]
+    return [
+      {
+        ...result.guess,
+        label: index + 1,
+        score: getScoreRatio(result),
+        tone: revealed ? undefined : 'tentative',
+      },
+    ]
   })
   if (phase === 'score-replay' || phase === 'finished') {
     return resultGuesses
@@ -1334,7 +1454,7 @@ function getVisibleScoreResults(results: TurnResult[], phase: Phase, visibleTime
     .filter((result) => phase !== 'score-replay' || result.target.time <= visibleTime)
 }
 
-function getAnimatedReplayScore(results: TurnResult[], replayTime: number, mode: GameMode) {
+function getAnimatedReplayScore(results: TurnResult[], replayTime: number) {
   return results.reduce((total, result) => {
     if (replayTime < result.target.time) {
       return total
@@ -1342,18 +1462,25 @@ function getAnimatedReplayScore(results: TurnResult[], replayTime: number, mode:
 
     const countUpProgress = Math.min(1, (replayTime - result.target.time) / 0.45)
     const easedProgress = 1 - Math.pow(1 - countUpProgress, 3)
-    const value = mode === 'endless' ? (result.points > 0 ? 1 : 0) : result.points
-    return total + Math.round(value * easedProgress)
+    return total + Math.round(result.points * easedProgress)
   }, 0)
 }
 
-function getGuessTone(points: number): GuessTone {
-  if (points <= 0) return 'miss'
-  if (points >= 85) return 'great'
-  return 'okay'
+function getNormalizedBounceScore(distance: number, pathLength: number, maxPoints: number) {
+  if (!Number.isFinite(distance)) {
+    return 0
+  }
+
+  const tolerance = clamp(pathLength * scoreDistanceFactor, minimumScoreTolerance, maximumScoreTolerance)
+  return Math.round(maxPoints * Math.exp(-((distance / tolerance) ** 2)))
 }
 
-function getGuessColors(tone: GuessTone = 'okay') {
+function getBounceMaxScore(pathLength: number) {
+  const progress = Math.log1p(Math.max(0, pathLength) / maxScoreLogScale) / Math.log1p(4)
+  return Math.round(minimumBounceMaxScore + (maximumBounceMaxScore - minimumBounceMaxScore) * clamp(progress, 0, 1))
+}
+
+function getGuessColors(tone: GuessTone | undefined, score = 0.65) {
   if (tone === 'tentative') {
     return {
       stroke: '#94a3b8',
@@ -1361,23 +1488,9 @@ function getGuessColors(tone: GuessTone = 'okay') {
     }
   }
 
-  if (tone === 'miss') {
-    return {
-      stroke: '#fb7185',
-      text: '#ffe4e6',
-    }
-  }
-
-  if (tone === 'great') {
-    return {
-      stroke: '#67e8f9',
-      text: '#cffafe',
-    }
-  }
-
   return {
-    stroke: '#facc15',
-    text: '#fef3c7',
+    stroke: getScoreColor(score),
+    text: '#f8fafc',
   }
 }
 
@@ -1431,10 +1544,6 @@ function shouldEndPredictionRound(
   return completedTurns >= turnCount
 }
 
-function getEndlessScore(results: TurnResult[]) {
-  return results.filter((result) => result.points > 0).length
-}
-
 function getEndlessMisses(results: TurnResult[]) {
   return results.filter((result) => result.points <= 0).length
 }
@@ -1443,11 +1552,62 @@ function formatScore(score: number, maxScore: number | null) {
   return maxScore === null ? String(score) : `${score}/${maxScore}`
 }
 
-function getScoreTone(points: number) {
-  if (points >= 85) return 'great'
-  if (points >= 60) return 'good'
-  if (points > 0) return 'okay'
-  return 'miss'
+function getScoreStyle(points: number, maxPoints = 100) {
+  return {
+    color: getScoreColor(maxPoints > 0 ? points / maxPoints : 0),
+  }
+}
+
+function getScoreColor(scoreRatio: number) {
+  if (scoreRatio <= 0) {
+    return '#ff3b5f'
+  }
+
+  const progress = clamp(scoreRatio, 0, 1)
+  const red = interpolate(250, 34, progress)
+  const green = interpolate(204, 211, progress)
+  const blue = interpolate(21, 238, progress)
+  return `rgb(${red}, ${green}, ${blue})`
+}
+
+function getScoreRatio(result: TurnResult) {
+  return result.maxPoints > 0 ? result.points / result.maxPoints : 0
+}
+
+function getPredictionMaxScore(results: TurnResult[], turnCount: number) {
+  if (results.length === 0) {
+    return turnCount * 100
+  }
+
+  return results.reduce((total, result) => total + result.maxPoints, 0)
+}
+
+function getTrajectoryDistance(samples: DrawOptions['samples'], fromTime: number, toTime: number) {
+  if (toTime <= fromTime) {
+    return 0
+  }
+
+  const fromState = getStateAtFast(samples, fromTime)
+  const toState = getStateAtFast(samples, toTime)
+  const startIndex = getSampleIndexAtOrAfter(samples, fromTime)
+  const endIndex = getSampleIndexAtOrBefore(samples, toTime)
+  let distance = 0
+  let previous = fromState
+
+  for (let index = startIndex; index <= endIndex; index += 1) {
+    distance += getDistance(previous, samples[index])
+    previous = samples[index]
+  }
+
+  return distance + getDistance(previous, toState)
+}
+
+function clamp(value: number, minimum: number, maximum: number) {
+  return Math.min(maximum, Math.max(minimum, value))
+}
+
+function interpolate(start: number, end: number, progress: number) {
+  return Math.round(start + (end - start) * progress)
 }
 
 function getImpactAge(bounces: Bounce[], time: number) {
