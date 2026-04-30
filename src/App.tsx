@@ -173,6 +173,7 @@ function App() {
   const [challengeError, setChallengeError] = useState('')
   const [challengeActionBusy, setChallengeActionBusy] = useState(false)
   const [challengeCopied, setChallengeCopied] = useState(false)
+  const [challengePanelOpen, setChallengePanelOpen] = useState(false)
   const [challengeAttemptStatus, setChallengeAttemptStatus] = useState<ChallengeAttemptStatus>(() =>
     getChallengeSlugFromAddress() ? readChallengeAttemptStatus(getChallengeSlugFromAddress() ?? '') : 'fresh',
   )
@@ -247,6 +248,7 @@ function App() {
     setChallenge(null)
     setChallengeError('')
     setChallengeCopied(false)
+    setChallengePanelOpen(false)
     setChallengeAttemptStatus('fresh')
     setPhase('ready')
     clearSeedFromAddress()
@@ -350,6 +352,7 @@ function App() {
     setTimerRemaining(endlessStartSeconds)
     setPauseBounceIndex(openingBounceIndex)
     setFinalMessage('')
+    setChallengePanelOpen(false)
     stepAnimationStartedAt.current = null
     stepAnimationFromTime.current = 0
     stepAnimationToTime.current = simulation.bounces[openingBounceIndex].time
@@ -960,20 +963,6 @@ function App() {
                 results={visibleScoreResults}
               />
               {finalMessage && <p className="final-score-note">{finalMessage}</p>}
-              <ChallengePanel
-                actionBusy={challengeActionBusy}
-                attemptStatus={challengeAttemptStatus}
-                challenge={challenge}
-                copied={challengeCopied}
-                error={challengeError}
-                initials={playerInitials}
-                isChallengeRun={Boolean(activeChallengeSlug)}
-                onCopy={copyChallengeLink}
-                onCreate={createChallengeFromRun}
-                onInitialsChange={setPlayerInitials}
-                onSubmit={submitCurrentChallengeScore}
-                shareUrl={challengeShareUrl}
-              />
               <div className="score-actions">
                 <button type="button" onClick={startNewRound}>
                   New Game
@@ -988,6 +977,32 @@ function App() {
                 >
                   Watch Replay
                 </button>
+              </div>
+              <div className="challenge-dropdown">
+                <button
+                  type="button"
+                  className="challenge-dropdown-toggle secondary"
+                  aria-expanded={challengePanelOpen}
+                  onClick={() => setChallengePanelOpen((open) => !open)}
+                >
+                  Challenge Your Friends
+                </button>
+                {challengePanelOpen && (
+                  <ChallengePanel
+                    actionBusy={challengeActionBusy}
+                    attemptStatus={challengeAttemptStatus}
+                    challenge={challenge}
+                    copied={challengeCopied}
+                    error={challengeError}
+                    initials={playerInitials}
+                    isChallengeRun={Boolean(activeChallengeSlug)}
+                    onCopy={copyChallengeLink}
+                    onCreate={createChallengeFromRun}
+                    onInitialsChange={setPlayerInitials}
+                    onSubmit={submitCurrentChallengeScore}
+                    shareUrl={challengeShareUrl}
+                  />
+                )}
               </div>
             </div>
           </div>
@@ -1873,7 +1888,7 @@ function ChallengePanel({
     <div className="challenge-panel">
       <div className="challenge-panel-heading">
         <p className="eyebrow">{isChallengeRun ? 'friend challenge' : 'share challenge'}</p>
-        <strong>{challenge ? `Board ${challenge.slug}` : 'Make this board beatable'}</strong>
+        <strong>{challenge ? `Board ${challenge.slug}` : 'See if your friends can play this board better than you could'}</strong>
       </div>
 
       {(canCreateChallenge || canSubmitScore) && (

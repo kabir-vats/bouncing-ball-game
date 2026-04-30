@@ -249,6 +249,19 @@ canvas {
   pointer-events: auto;
 }
 
+.challenge-dropdown {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  width: min(420px, calc(100vw - 48px));
+  pointer-events: auto;
+}
+
+.challenge-dropdown-toggle {
+  width: 100%;
+  max-width: 260px;
+}
+
 .tutorial-tip {
   position: absolute;
   left: 18px;
