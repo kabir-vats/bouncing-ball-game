@@ -8,6 +8,7 @@ export type ChallengeTurn = {
 export type ChallengeEntry = {
   id: string
   initials: string
+  playerId?: string
   score: number
   maxScore: number
   createdAt: string
@@ -93,6 +94,7 @@ function createLocalChallenge(input: CreateChallengeInput) {
       {
         id: createEntryId(input.playerId),
         initials: input.creatorInitials,
+        playerId: input.playerId,
         score: input.score,
         maxScore: input.maxScore,
         createdAt: now,
@@ -123,6 +125,7 @@ function submitLocalChallengeScore(slug: string, input: SubmitChallengeScoreInpu
     {
       id: entryId,
       initials: input.initials,
+      playerId: input.playerId,
       score: input.score,
       maxScore: input.maxScore,
       createdAt: new Date().toISOString(),

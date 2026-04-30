@@ -47,7 +47,7 @@ export async function fetchChallenge(slug) {
   }
 
   const scores = await supabase(
-    `challenge_scores?challenge_slug=eq.${encodeURIComponent(clean)}&select=id,initials,score,max_score,created_at&order=score.desc,created_at.asc&limit=50`,
+    `challenge_scores?challenge_slug=eq.${encodeURIComponent(clean)}&select=id,player_id,initials,score,max_score,created_at&order=score.desc,created_at.asc&limit=50`,
   )
 
   return {
@@ -59,6 +59,7 @@ export async function fetchChallenge(slug) {
     leaderboard: scores.map((score) => ({
       id: score.id,
       initials: score.initials,
+      playerId: score.player_id,
       score: score.score,
       maxScore: score.max_score,
       createdAt: score.created_at,

@@ -145,6 +145,7 @@ function App() {
   const finalScoreDragRef = useRef<DragState | null>(null)
   const runBestBeforeRef = useRef(0)
   const recordedFinishedScoreRef = useRef<string | null>(null)
+  const autoSubmittedChallengeRef = useRef<string | null>(null)
   const [board, setBoard] = useState<BoardState>(() => createInitialBoard())
   const currentScene = board.scene
   const [phase, setPhase] = useState<Phase>('ready')
@@ -230,6 +231,7 @@ function App() {
     lastSoundBounceRef.current = -1
     lastSoundTimeRef.current = 0
     recordedFinishedScoreRef.current = null
+    autoSubmittedChallengeRef.current = null
     setBoard({
       scene: generateRandomScene(defaultGeneratorConfig, endlessGenerationBounces, nextSeed),
       seed: nextSeed,
@@ -331,10 +333,19 @@ function App() {
     }
 
     if (activeChallengeSlug) {
+      const initials = normalizeInitials(playerInitials)
+      if (!isAllowedInitials(initials)) {
+        setChallengeError('Use 1-3 safe letters or numbers.')
+        return
+      }
+
       if (challengeAttemptStatus !== 'fresh') {
         return
       }
 
+      writePlayerInitials(initials)
+      setPlayerInitials(initials)
+      setChallengeError('')
       writeChallengeAttemptStatus(activeChallengeSlug, 'started')
       setChallengeAttemptStatus('started')
     }
@@ -342,6 +353,7 @@ function App() {
     enableAudio()
     runBestBeforeRef.current = localHighScore
     recordedFinishedScoreRef.current = null
+    autoSubmittedChallengeRef.current = null
     activeGuessRef.current = null
     finishedLoopAbsoluteTimeRef.current = 0
     lastSoundBounceRef.current = -1
@@ -360,7 +372,15 @@ function App() {
     setStepTime(0)
     setFinalTrailTime(0)
     setPhase('opening')
-  }, [activeChallengeSlug, challengeAttemptStatus, enableAudio, localHighScore, openingBounceIndex, simulation.bounces])
+  }, [
+    activeChallengeSlug,
+    challengeAttemptStatus,
+    enableAudio,
+    localHighScore,
+    openingBounceIndex,
+    playerInitials,
+    simulation.bounces,
+  ])
 
   const createChallengeFromRun = useCallback(() => {
     const initials = normalizeInitials(playerInitials)
@@ -404,6 +424,10 @@ function App() {
       return
     }
 
+    if (challengeActionBusy || challengeAttemptStatus === 'submitted') {
+      return
+    }
+
     const initials = normalizeInitials(playerInitials)
     if (!isAllowedInitials(initials)) {
       setChallengeError('Use 1-3 safe letters or numbers.')
@@ -430,7 +454,16 @@ function App() {
       setChallengeError(error instanceof Error ? error.message : 'Could not submit score.')
       setChallengeActionBusy(false)
     })
-  }, [activeChallengeSlug, maxScore, playerId, playerInitials, totalScore, turnResults])
+  }, [
+    activeChallengeSlug,
+    challengeActionBusy,
+    challengeAttemptStatus,
+    maxScore,
+    playerId,
+    playerInitials,
+    totalScore,
+    turnResults,
+  ])
 
   const copyChallengeLink = useCallback(() => {
     if (!challenge) {
@@ -836,6 +869,20 @@ function App() {
   }, [board.seed, localHighScore, maxScore, phase, totalScore, turnResults])
 
   useEffect(() => {
+    if (phase !== 'finished' || !activeChallengeSlug || challengeAttemptStatus !== 'started') {
+      return
+    }
+
+    const runKey = `${activeChallengeSlug}:${turnResults.length}:${totalScore}`
+    if (autoSubmittedChallengeRef.current === runKey) {
+      return
+    }
+
+    autoSubmittedChallengeRef.current = runKey
+    submitCurrentChallengeScore()
+  }, [activeChallengeSlug, challengeAttemptStatus, phase, submitCurrentChallengeScore, totalScore, turnResults.length])
+
+  useEffect(() => {
     const canvas = canvasRef.current
     const context = canvas?.getContext('2d')
 
@@ -933,9 +980,9 @@ function App() {
               </div>
             ) : activeChallengeSlug && challengeAttemptStatus !== 'fresh' ? (
               <div className="ready-panel">
-                <p className="eyebrow">challenge locked</p>
-                <strong>You already used this attempt.</strong>
-                {challenge && <ChallengeLeaderboard challenge={challenge} />}
+                <p className="eyebrow">leaderboard</p>
+                <strong>{challenge ? getChallengeTitle(challenge) : 'Challenge'}</strong>
+                {challenge && <ChallengeLeaderboard challenge={challenge} playerId={playerId} />}
                 <div className="score-actions">
                   <button type="button" onClick={copyChallengeLink}>
                     {challengeCopied ? 'Copied' : 'Copy Link'}
@@ -944,6 +991,25 @@ function App() {
                     New Game
                   </button>
                 </div>
+              </div>
+            ) : activeChallengeSlug && challenge ? (
+              <div className="ready-panel challenge-lobby">
+                <p className="eyebrow">challenge</p>
+                <strong>{getChallengeTitle(challenge)}</strong>
+                <label className="initials-field">
+                  <span>Initials</span>
+                  <input
+                    aria-label="Leaderboard initials"
+                    maxLength={3}
+                    onChange={(event) => setPlayerInitials(cleanInitialsInput(event.target.value))}
+                    value={playerInitials}
+                  />
+                </label>
+                {challengeError && <p className="challenge-error">{challengeError}</p>}
+                <ChallengeLeaderboard challenge={challenge} playerId={playerId} />
+                <button type="button" onClick={startGame}>
+                  Play Challenge
+                </button>
               </div>
             ) : (
               <button type="button" onClick={startGame}>
@@ -1000,16 +1066,33 @@ function App() {
                   Watch Replay
                 </button>
               </div>
-              <div className="challenge-dropdown">
-                <button
-                  type="button"
-                  className="challenge-dropdown-toggle secondary"
-                  aria-expanded={challengePanelOpen}
-                  onClick={() => setChallengePanelOpen((open) => !open)}
-                >
-                  Challenge Your Friends
-                </button>
-                {challengePanelOpen && (
+              {activeChallengeSlug ? (
+                <ChallengePanel
+                  actionBusy={challengeActionBusy}
+                  attemptStatus={challengeAttemptStatus}
+                  challenge={challenge}
+                  copied={challengeCopied}
+                  error={challengeError}
+                  initials={playerInitials}
+                  isChallengeRun
+                  onCopy={copyChallengeLink}
+                  onCreate={createChallengeFromRun}
+                  onInitialsChange={setPlayerInitials}
+                  onSubmit={submitCurrentChallengeScore}
+                  playerId={playerId}
+                  shareUrl={challengeShareUrl}
+                />
+              ) : (
+                <div className="challenge-dropdown">
+                  <button
+                    type="button"
+                    className="challenge-dropdown-toggle secondary"
+                    aria-expanded={challengePanelOpen}
+                    onClick={() => setChallengePanelOpen((open) => !open)}
+                  >
+                    Challenge Your Friends
+                  </button>
+                  {challengePanelOpen && (
                   <ChallengePanel
                     actionBusy={challengeActionBusy}
                     attemptStatus={challengeAttemptStatus}
@@ -1022,10 +1105,12 @@ function App() {
                     onCreate={createChallengeFromRun}
                     onInitialsChange={setPlayerInitials}
                     onSubmit={submitCurrentChallengeScore}
+                    playerId={playerId}
                     shareUrl={challengeShareUrl}
                   />
-                )}
-              </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1915,6 +2000,7 @@ type ChallengePanelProps = {
   onCreate: () => void
   onInitialsChange: (initials: string) => void
   onSubmit: () => void
+  playerId: string
   shareUrl: string
 }
 
@@ -1930,18 +2016,23 @@ function ChallengePanel({
   onCreate,
   onInitialsChange,
   onSubmit,
+  playerId,
   shareUrl,
 }: ChallengePanelProps) {
   const normalizedInitials = normalizeInitials(initials)
   const initialsAllowed = isAllowedInitials(normalizedInitials)
-  const canSubmitScore = isChallengeRun && attemptStatus === 'started'
+  const canSubmitScore = isChallengeRun && attemptStatus === 'started' && Boolean(error)
   const canCreateChallenge = !isChallengeRun && !challenge
 
   return (
     <div className="challenge-panel">
       <div className="challenge-panel-heading">
         <p className="eyebrow">{isChallengeRun ? 'friend challenge' : 'share challenge'}</p>
-        <strong>{challenge ? `Board ${challenge.slug}` : 'See if your friends can play this board better than you could'}</strong>
+        <strong>
+          {challenge
+            ? getChallengeTitle(challenge)
+            : 'See if your friends can play this board better than you could'}
+        </strong>
       </div>
 
       {(canCreateChallenge || canSubmitScore) && (
@@ -1957,6 +2048,9 @@ function ChallengePanel({
       )}
 
       {error && <p className="challenge-error">{error}</p>}
+      {isChallengeRun && attemptStatus === 'started' && !error && (
+        <p className="challenge-status">{actionBusy ? 'Submitting score...' : 'Score pending...'}</p>
+      )}
 
       {canCreateChallenge && (
         <button type="button" disabled={!initialsAllowed || actionBusy} onClick={onCreate}>
@@ -1978,25 +2072,39 @@ function ChallengePanel({
               {copied ? 'Copied' : 'Copy'}
             </button>
           </div>
-          <ChallengeLeaderboard challenge={challenge} />
+          <ChallengeLeaderboard challenge={challenge} playerId={playerId} />
         </>
       )}
     </div>
   )
 }
 
-function ChallengeLeaderboard({ challenge }: { challenge: ChallengeRecord }) {
+function ChallengeLeaderboard({ challenge, playerId }: { challenge: ChallengeRecord; playerId: string }) {
   return (
-    <div className="challenge-leaderboard">
-      {challenge.leaderboard.slice(0, 8).map((entry, index) => (
-        <span className="challenge-entry" key={entry.id}>
-          <strong>{index + 1}</strong>
-          <span>{entry.initials}</span>
-          <span>{entry.score}/{entry.maxScore}</span>
-        </span>
-      ))}
+    <div className="challenge-leaderboard-wrap">
+      <p className="challenge-leaderboard-title">Leaderboard:</p>
+      <div className="challenge-leaderboard">
+        {challenge.leaderboard.slice(0, 8).map((entry, index) => (
+          <span
+            className={`challenge-entry ${isPlayerEntry(entry, playerId) ? 'is-player' : ''}`}
+            key={entry.id}
+          >
+            <strong>{index + 1}</strong>
+            <span>{entry.initials}</span>
+            <span>{entry.score}/{entry.maxScore}</span>
+          </span>
+        ))}
+      </div>
     </div>
   )
+}
+
+function getChallengeTitle(challenge: ChallengeRecord) {
+  return `${challenge.creatorInitials}'s challenge`
+}
+
+function isPlayerEntry(entry: ChallengeRecord['leaderboard'][number], playerId: string) {
+  return entry.playerId === playerId || entry.id === `player:${playerId}`
 }
 
 function getObstacleFill(kind: GameScene['obstacles'][number]['kind'], theme: Theme) {
