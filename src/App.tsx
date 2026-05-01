@@ -962,7 +962,7 @@ function App() {
     if (phase === 'guessing' && turnResults.length === 0) {
       showTutorialTip(setActiveTip, {
         key: 'firstPrediction',
-        text: 'Guess where the next bounce lands.',
+        text: 'Tap where you think the ball will hit next.',
       })
     }
   }, [phase, turnResults.length])
@@ -976,7 +976,7 @@ function App() {
     if (latestResult.points <= 0) {
       showTutorialTip(setActiveTip, {
         key: 'firstMiss',
-        text: 'A miss burns one life. You get three.',
+        text: 'Guess too far from the bounce and you lose a life. You get three.',
       })
       return
     }
@@ -991,7 +991,7 @@ function App() {
 
     showTutorialTip(setActiveTip, {
       key: 'firstScore',
-      text: 'Guess close to the bounce to score more points.',
+      text: 'Guess closer to the bounce to score more points.',
     })
   }, [turnResults])
 
