@@ -18,7 +18,11 @@ create table if not exists public.daily_scores (
   id uuid primary key default gen_random_uuid(),
   daily_date date not null references public.daily_boards(date) on delete cascade,
   player_id text not null,
-  initials text not null check (char_length(initials) = 3),
+  initials text not null check (
+    initials ~ '^[A-Z]{1,3}$'
+    and initials not in ('ASS', 'CUM', 'KKK', 'NZI', 'SEX', 'TIT', 'XXX')
+    and initials !~ '^(F.G|F.K|N.G|S.X)$'
+  ),
   score integer not null check (score >= 0),
   max_score integer not null check (max_score >= 0),
   run_json jsonb not null default '[]'::jsonb,
@@ -46,4 +50,5 @@ Notes:
 - One official attempt per browser is stored in localStorage.
 - Supabase also rejects duplicate daily scores per `player_id` through the unique constraint.
 - The API recomputes submitted daily scores from the daily seed and submitted guesses before storing leaderboard entries.
+- If your database already has the older exactly-3-character initials check, run `docs/initials-1-to-3-migration.sql` in Supabase.
 - Streak count and “played today” are local browser state for now.

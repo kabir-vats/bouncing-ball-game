@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { verifyScorePayload } from './_challenges.js'
+import { cleanInitials, validateScorePayload, verifyScorePayload } from './_challenges.js'
 import { defaultGeneratorConfig, defaultRequiredBounces, generateRandomScene, observeDuration, simulateTrajectory } from '../shared/game.js'
 
 describe('server score verification', () => {
@@ -29,4 +29,24 @@ describe('server score verification', () => {
 
     warn.mockRestore()
   })
+
+  it('allows 1-3 letters and rejects blocked or non-letter initials', () => {
+    expect(cleanInitials('a1-b')).toBe('AB')
+    expect(validateScorePayload(basePayload({ initials: 'A' }))?.initials).toBe('A')
+    expect(validateScorePayload(basePayload({ initials: 'AB' }))?.initials).toBe('AB')
+    expect(validateScorePayload(basePayload({ initials: 'ABC' }))?.initials).toBe('ABC')
+    expect(validateScorePayload(basePayload({ initials: '123' }))).toBeNull()
+    expect(validateScorePayload(basePayload({ initials: 'SEX' }))).toBeNull()
+  })
 })
+
+function basePayload(overrides = {}) {
+  return {
+    initials: 'AAA',
+    playerId: 'player-1',
+    score: 0,
+    maxScore: 0,
+    guesses: [],
+    ...overrides,
+  }
+}

@@ -720,7 +720,7 @@ canvas {
 
 .initials-field {
   display: grid;
-  grid-template-columns: 1fr 84px;
+  grid-template-columns: 1fr 108px;
   gap: 10px;
   align-items: center;
   color: var(--muted);
@@ -731,7 +731,7 @@ canvas {
 }
 
 .initials-field input {
-  width: 84px;
+  width: 108px;
   border: 1px solid rgba(148, 163, 184, 0.28);
   border-radius: 8px;
   padding: 8px 9px;

@@ -1,8 +1,9 @@
 import { supabase } from './_supabase.js'
+import { isAllowedInitials, normalizeInitials } from '../shared/initials.js'
 import { scoreRun } from '../shared/game.js'
 
 export function cleanInitials(value) {
-  return String(value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3)
+  return normalizeInitials(value)
 }
 
 export function cleanSlug(value) {
@@ -21,7 +22,7 @@ export function validateScorePayload(body) {
   const localMaxScore = Number(body.maxScore)
   const playerId = String(body.playerId ?? '').slice(0, 128)
 
-  if (initials.length !== 3 || !playerId || !Number.isFinite(localScore) || !Number.isFinite(localMaxScore)) {
+  if (!isAllowedInitials(initials) || !playerId || !Number.isFinite(localScore) || !Number.isFinite(localMaxScore)) {
     return null
   }
 

@@ -2,6 +2,11 @@
 import './App.css'
 import { Analytics } from '@vercel/analytics/react'
 import {
+  getInitialsError,
+  isAllowedInitials,
+  normalizeInitials,
+} from '../shared/initials.js'
+import {
   type ChallengeRecord,
   createChallenge,
   getChallenge,
@@ -1658,23 +1663,6 @@ function updateDailyStreak(date: string) {
 
 function cleanInitialsInput(input: string) {
   return normalizeInitials(input)
-}
-
-function normalizeInitials(input: string) {
-  return input.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3)
-}
-
-function isAllowedInitials(initials: string) {
-  const blocked = new Set(['ASS', 'KKK', 'NZI', 'SEX', 'XXX'])
-  return initials.length === 3 && !blocked.has(initials)
-}
-
-function getInitialsError(initials: string) {
-  if (initials.length !== 3) {
-    return 'Enter exactly three letters or numbers.'
-  }
-
-  return 'Try different initials.'
 }
 
 function formatDailyTitle(date: string) {
