@@ -1,5 +1,6 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
+import { Analytics } from '@vercel/analytics/react'
 import {
   type ChallengeRecord,
   createChallenge,
@@ -1414,6 +1415,7 @@ function App() {
           )}
         </div>
       </section>
+      <Analytics />
     </main>
   )
 }
