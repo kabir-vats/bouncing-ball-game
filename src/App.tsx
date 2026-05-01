@@ -8,7 +8,7 @@ import {
   getChallengeUrl,
   submitChallengeScore,
 } from './challenges'
-import { type DailyRecord, getDaily, getDailyDateKey, submitDailyScore } from './dailies'
+import { type DailyRecord, getDaily, getDailyDateKey, getDailyUrl, submitDailyScore } from './dailies'
 import {
   type Bounce,
   type GameScene,
@@ -110,6 +110,7 @@ const dailyStreakKey = 'bounce-call.daily-streak'
 const tutorialStoragePrefix = 'bounce-call.tutorial.'
 const seedQueryParam = 'seed'
 const challengeQueryParam = 'challenge'
+const dailyQueryParam = 'daily'
 const initialsPlaceholder = 'YOU'
 const gameOverMessages = [
   'Boing Boing Boing Boing Boing',
@@ -186,11 +187,14 @@ function App() {
     getChallengeSlugFromAddress() ? readChallengeAttemptStatus(getChallengeSlugFromAddress() ?? '') : 'fresh',
   )
   const [daily, setDaily] = useState<DailyRecord | null>(null)
-  const [activeDailyDate, setActiveDailyDate] = useState<string | null>(null)
-  const [dailyLoading, setDailyLoading] = useState(false)
+  const [activeDailyDate, setActiveDailyDate] = useState<string | null>(() => getDailyDateFromAddress())
+  const [dailyLoading, setDailyLoading] = useState(() => Boolean(getDailyDateFromAddress()))
   const [dailyError, setDailyError] = useState('')
   const [dailyActionBusy, setDailyActionBusy] = useState(false)
-  const [dailyAttemptStatus, setDailyAttemptStatus] = useState<DailyAttemptStatus>('fresh')
+  const [dailyCopied, setDailyCopied] = useState(false)
+  const [dailyAttemptStatus, setDailyAttemptStatus] = useState<DailyAttemptStatus>(() =>
+    getDailyDateFromAddress() ? readDailyAttemptStatus(getDailyDateFromAddress() ?? '') : 'fresh',
+  )
   const [dailyStreak, setDailyStreak] = useState(() => readDailyStreak())
 
   const simulation = useMemo(() => simulateTrajectory(currentScene, finalLoopDuration), [currentScene])
@@ -215,6 +219,7 @@ function App() {
   const visibleTargets = getEndlessTargets(turnResults, phase, revealedTime)
   const timerProgress = phase === 'guessing' ? Math.max(0, Math.min(1, timerRemaining / currentTurnSeconds)) : null
   const challengeShareUrl = challenge ? getChallengeUrl(challenge.slug) : ''
+  const dailyShareUrl = activeDailyDate ? getDailyUrl(activeDailyDate) : ''
   const playDueBounceSounds = useCallback(
     (time: number) => {
       if (time < lastSoundTimeRef.current) {
@@ -271,10 +276,12 @@ function App() {
     setActiveDailyDate(null)
     setDailyError('')
     setDailyActionBusy(false)
+    setDailyCopied(false)
     setDailyAttemptStatus('fresh')
     setPhase('ready')
     clearSeedFromAddress()
     clearChallengeFromAddress()
+    clearDailyFromAddress()
   }, [])
 
   const watchOneBounceReplay = useCallback(() => {
@@ -471,6 +478,7 @@ function App() {
     setDailyError('')
     clearChallengeFromAddress()
     clearSeedFromAddress()
+    pushDailyAddress(date)
   }, [])
 
   const submitCurrentChallengeScore = useCallback(() => {
@@ -566,6 +574,16 @@ function App() {
     setChallengeCopied(true)
     window.setTimeout(() => setChallengeCopied(false), 1800)
   }, [challenge])
+
+  const copyDailyLink = useCallback(() => {
+    if (!activeDailyDate) {
+      return
+    }
+
+    void copyText(getDailyUrl(activeDailyDate), 'Daily challenge link')
+    setDailyCopied(true)
+    window.setTimeout(() => setDailyCopied(false), 1800)
+  }, [activeDailyDate])
 
   const finishTurn = useCallback(() => {
     if (phase !== 'guessing' || !currentTarget) {
@@ -1156,6 +1174,9 @@ function App() {
                 <DailyMeta streak={dailyStreak} playedToday />
                 {daily && <DailyLeaderboard daily={daily} playerId={playerId} />}
                 <div className="score-actions">
+                  <FlipButton type="button" hoverText="Copy" onClick={copyDailyLink}>
+                    {dailyCopied ? 'Copied' : 'Copy Link'}
+                  </FlipButton>
                   <button type="button" className="secondary" onClick={startNewRound}>
                     New Game
                   </button>
@@ -1322,9 +1343,12 @@ function App() {
               {activeDailyDate ? (
                 <DailyPanel
                   actionBusy={dailyActionBusy}
+                  copied={dailyCopied}
                   daily={daily}
                   error={dailyError}
+                  onCopy={copyDailyLink}
                   playerId={playerId}
+                  shareUrl={dailyShareUrl}
                   streak={dailyStreak}
                 />
               ) : activeChallengeSlug ? (
@@ -1463,6 +1487,20 @@ function getChallengeSlugFromAddress() {
   return match ? cleanChallengeSlug(match[1]) : null
 }
 
+function getDailyDateFromAddress() {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  const dateFromQuery = new URLSearchParams(window.location.search).get(dailyQueryParam)
+  if (dateFromQuery) {
+    return cleanDailyDate(dateFromQuery)
+  }
+
+  const match = window.location.pathname.match(/^\/d\/(\d{4}-\d{2}-\d{2})/i)
+  return match ? cleanDailyDate(match[1]) : null
+}
+
 function clearSeedFromAddress() {
   if (typeof window === 'undefined') {
     return
@@ -1491,6 +1529,20 @@ function clearChallengeFromAddress() {
   window.history.replaceState({}, '', `/${url.search}${url.hash}`)
 }
 
+function clearDailyFromAddress() {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  const url = new URL(window.location.href)
+  if (!url.searchParams.has(dailyQueryParam) && !url.pathname.startsWith('/d/')) {
+    return
+  }
+
+  url.searchParams.delete(dailyQueryParam)
+  window.history.replaceState({}, '', `/${url.search}${url.hash}`)
+}
+
 function pushChallengeAddress(slug: string) {
   if (typeof window === 'undefined') {
     return
@@ -1499,9 +1551,21 @@ function pushChallengeAddress(slug: string) {
   window.history.replaceState({}, '', `/c/${slug}`)
 }
 
+function pushDailyAddress(date: string) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  window.history.replaceState({}, '', `/d/${date}`)
+}
+
 function cleanChallengeSlug(slug: string) {
   const cleaned = slug.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 32)
   return cleaned || null
+}
+
+function cleanDailyDate(date: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null
 }
 
 function readLocalHighScore() {
@@ -2452,13 +2516,16 @@ function ChallengeLeaderboard({ challenge, playerId }: { challenge: ChallengeRec
 
 type DailyPanelProps = {
   actionBusy: boolean
+  copied: boolean
   daily: DailyRecord | null
   error: string
+  onCopy: () => void
   playerId: string
+  shareUrl: string
   streak: number
 }
 
-function DailyPanel({ actionBusy, daily, error, playerId, streak }: DailyPanelProps) {
+function DailyPanel({ actionBusy, copied, daily, error, onCopy, playerId, shareUrl, streak }: DailyPanelProps) {
   return (
     <div className="challenge-panel">
       <div className="challenge-panel-heading">
@@ -2468,7 +2535,17 @@ function DailyPanel({ actionBusy, daily, error, playerId, streak }: DailyPanelPr
       <DailyMeta streak={streak} playedToday />
       {error && <p className="challenge-error">{error}</p>}
       {actionBusy && <p className="challenge-status">Submitting score...</p>}
-      {daily && <DailyLeaderboard daily={daily} playerId={playerId} />}
+      {daily && (
+        <>
+          <div className="challenge-share-row">
+            <span>{shareUrl}</span>
+            <FlipButton type="button" className="secondary compact" hoverText="Copy" onClick={onCopy}>
+              {copied ? 'Copied' : 'Copy'}
+            </FlipButton>
+          </div>
+          <DailyLeaderboard daily={daily} playerId={playerId} />
+        </>
+      )}
     </div>
   )
 }

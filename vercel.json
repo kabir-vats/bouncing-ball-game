@@ -5,6 +5,10 @@
       "destination": "/api/share/:slug"
     },
     {
+      "source": "/d/:date",
+      "destination": "/api/share-daily/:date"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

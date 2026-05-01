@@ -1,22 +1,27 @@
-import { cleanSlug, fetchChallenge } from '../_challenges.js'
+import { cleanDate, fetchDaily } from '../_dailies.js'
 import { html, requireMethod } from '../_http.js'
+import { formatDailyCardDate } from '../_share_cards.js'
 
 export default async function handler(req, res) {
   if (!requireMethod(req, res, 'GET')) {
     return
   }
 
-  const slug = cleanSlug(req.query.slug)
+  const date = cleanDate(req.query.date)
   const origin = getOrigin(req)
-  const playUrl = `${origin}/?challenge=${encodeURIComponent(slug)}`
-  const imageUrl = `${origin}/api/og/challenge/${encodeURIComponent(slug)}`
-  let title = 'Beat this board and check your Ball Knowledge'
-  let description = 'One board, three lives, and one official attempt.'
+  const playUrl = `${origin}/?daily=${encodeURIComponent(date)}`
+  const imageUrl = `${origin}/api/og/daily/${encodeURIComponent(date)}`
+  const dateLabel = formatDailyCardDate(date)
+  let title = `Ball Knowledge Daily ${dateLabel}`
+  let description = 'One daily board, three lives, and one official attempt.'
 
   try {
-    const challenge = await fetchChallenge(slug)
-    title = `Surpass ${challenge.creatorInitials}'s score`
-    description = `${challenge.creatorInitials} scored ${challenge.creatorScore}. Is your ball knowledge more elite?`
+    const daily = await fetchDaily(date)
+    const leader = daily.leaderboard[0]
+    if (leader) {
+      title = `Beat ${leader.initials} on the ${dateLabel} Daily`
+      description = `${leader.initials} is leading with ${leader.score}. Can you predict the next bounce better?`
+    }
   } catch {
     // Keep the share page useful before the database is configured.
   }
@@ -31,7 +36,7 @@ export default async function handler(req, res) {
     <meta property="og:title" content="${escapeHtml(title)}" />
     <meta property="og:description" content="${escapeHtml(description)}" />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="${origin}/c/${escapeHtml(slug)}" />
+    <meta property="og:url" content="${origin}/d/${escapeHtml(date)}" />
     <meta property="og:image" content="${imageUrl}" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
@@ -40,7 +45,7 @@ export default async function handler(req, res) {
     <meta http-equiv="refresh" content="0; url=${playUrl}" />
   </head>
   <body>
-    <a href="${playUrl}">Play this challenge</a>
+    <a href="${playUrl}">Play the daily challenge</a>
     <script>window.location.replace(${JSON.stringify(playUrl)})</script>
   </body>
 </html>`)
