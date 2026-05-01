@@ -1243,7 +1243,7 @@ function App() {
                   <FlipButton type="button" className="secondary" hoverText="Copy" onClick={copyChallengeLink}>
                     {challengeCopied ? 'Copied' : 'Copy Link'}
                   </FlipButton>
-                  <FlipButton type="button" className="wave-text" hoverText="Fresh Board" onClick={startNewRound}>
+                  <FlipButton type="button" hoverText="Fresh Board" onClick={startNewRound}>
                     New Game
                   </FlipButton>
                 </div>
@@ -1349,7 +1349,7 @@ function App() {
                 <FlipButton
                   type="button"
                   className="secondary"
-                  hoverText="Run It Back"
+                  hoverText="Replay"
                   onClick={() => {
                     enableAudio()
                     watchOneBounceReplay()
@@ -2420,7 +2420,7 @@ function ChallengeCreatePanel({
             value={initials}
           />
         </label>
-        <FlipButton type="button" className="secondary" disabled={!initialsAllowed || actionBusy} hoverText="Send It" onClick={onCreate}>
+        <FlipButton type="button" className="secondary" disabled={!initialsAllowed || actionBusy} hoverText="Create Challenge Link" onClick={onCreate}>
           {actionBusy ? 'Creating' : 'Challenge a Friend'}
         </FlipButton>
       </div>
