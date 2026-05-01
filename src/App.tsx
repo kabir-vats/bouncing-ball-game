@@ -105,7 +105,7 @@ const challengeAttemptPrefix = 'bounce-call.challenge-attempt.'
 const tutorialStoragePrefix = 'bounce-call.tutorial.'
 const seedQueryParam = 'seed'
 const challengeQueryParam = 'challenge'
-const fallbackInitials = 'YOU'
+const initialsPlaceholder = 'YOU'
 const gameOverMessages = [
   'Boing Boing Boing Boing Boing',
   'Accurate Physics Verified™',
@@ -335,7 +335,7 @@ function App() {
     if (activeChallengeSlug) {
       const initials = normalizeInitials(playerInitials)
       if (!isAllowedInitials(initials)) {
-        setChallengeError('Use 1-3 safe letters or numbers.')
+        setChallengeError(getInitialsError(initials))
         return
       }
 
@@ -385,7 +385,7 @@ function App() {
   const createChallengeFromRun = useCallback(() => {
     const initials = normalizeInitials(playerInitials)
     if (!isAllowedInitials(initials)) {
-      setChallengeError('Use 1-3 safe letters or numbers.')
+      setChallengeError(getInitialsError(initials))
       return
     }
 
@@ -430,7 +430,7 @@ function App() {
 
     const initials = normalizeInitials(playerInitials)
     if (!isAllowedInitials(initials)) {
-      setChallengeError('Use 1-3 safe letters or numbers.')
+      setChallengeError(getInitialsError(initials))
       return
     }
 
@@ -970,7 +970,7 @@ function App() {
                 <p className="eyebrow">challenge</p>
                 <strong>Loading board</strong>
               </div>
-            ) : challengeError ? (
+            ) : challengeError && !activeChallengeSlug ? (
               <div className="ready-panel">
                 <p className="eyebrow">challenge</p>
                 <strong>{challengeError}</strong>
@@ -1002,12 +1002,13 @@ function App() {
                     aria-label="Leaderboard initials"
                     maxLength={3}
                     onChange={(event) => setPlayerInitials(cleanInitialsInput(event.target.value))}
+                    placeholder={initialsPlaceholder}
                     value={playerInitials}
                   />
                 </label>
                 {challengeError && <p className="challenge-error">{challengeError}</p>}
                 <ChallengeLeaderboard challenge={challenge} playerId={playerId} />
-                <button type="button" onClick={startGame}>
+                <button type="button" disabled={!isAllowedInitials(playerInitials)} onClick={startGame}>
                   Play Challenge
                 </button>
               </div>
@@ -1275,9 +1276,10 @@ function readPlayerId() {
 
 function readPlayerInitials() {
   try {
-    return normalizeInitials(window.localStorage.getItem(playerInitialsKey) ?? fallbackInitials) || fallbackInitials
+    const stored = normalizeInitials(window.localStorage.getItem(playerInitialsKey) ?? '')
+    return isAllowedInitials(stored) ? stored : ''
   } catch {
-    return fallbackInitials
+    return ''
   }
 }
 
@@ -1316,7 +1318,15 @@ function normalizeInitials(input: string) {
 
 function isAllowedInitials(initials: string) {
   const blocked = new Set(['ASS', 'KKK', 'NZI', 'SEX', 'XXX'])
-  return initials.length >= 1 && initials.length <= 3 && !blocked.has(initials)
+  return initials.length === 3 && !blocked.has(initials)
+}
+
+function getInitialsError(initials: string) {
+  if (initials.length !== 3) {
+    return 'Enter exactly three letters or numbers.'
+  }
+
+  return 'Try different initials.'
 }
 
 function serializeTurns(results: TurnResult[]) {
@@ -2042,6 +2052,7 @@ function ChallengePanel({
             aria-label="Leaderboard initials"
             maxLength={3}
             onChange={(event) => onInitialsChange(cleanInitialsInput(event.target.value))}
+            placeholder={initialsPlaceholder}
             value={initials}
           />
         </label>
