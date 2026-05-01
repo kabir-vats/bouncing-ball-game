@@ -1239,9 +1239,10 @@ function App() {
                     type="button"
                     className="daily-button secondary"
                     aria-label="Daily challenge"
+                    title="Daily challenge"
                     onClick={openDailyChallenge}
                   >
-                    📅
+                    <CalendarIcon />
                   </button>
                 </div>
               </div>
@@ -1267,7 +1268,7 @@ function App() {
         {phase === 'finished' && (
           <div className="final-score-menu">
             <div
-              className="draggable-final-score"
+              className={`draggable-final-score ${activeDailyDate || activeChallengeSlug ? 'social-results' : ''}`}
               onPointerDown={handleFinalScorePointerDown}
               onPointerMove={handleFinalScorePointerMove}
               onPointerUp={handleFinalScorePointerUp}
@@ -2417,8 +2418,8 @@ function DailyPanel({ actionBusy, daily, error, playerId, streak }: DailyPanelPr
 function DailyMeta({ playedToday, streak }: { playedToday: boolean; streak: number }) {
   return (
     <div className="daily-meta">
-      <span>{playedToday ? 'Played today' : 'Not played yet'}</span>
-      <span>Streak {streak}</span>
+      <span className={playedToday ? 'is-played' : 'is-unplayed'}>{playedToday ? 'Played today' : 'Not played yet'}</span>
+      <span className="is-streak">Streak {streak}</span>
     </div>
   )
 }
@@ -2453,6 +2454,16 @@ function getChallengeTitle(challenge: ChallengeRecord) {
 
 function isPlayerEntry(entry: ChallengeRecord['leaderboard'][number], playerId: string) {
   return entry.playerId === playerId || entry.id === `player:${playerId}`
+}
+
+function CalendarIcon() {
+  return (
+    <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+      <rect x="4" y="5" width="16" height="15" rx="3" />
+      <path d="M8 3v4M16 3v4M4 10h16" />
+      <path d="M8 14h.01M12 14h.01M16 14h.01M8 17h.01M12 17h.01" />
+    </svg>
+  )
 }
 
 function getObstacleFill(kind: GameScene['obstacles'][number]['kind'], theme: Theme) {

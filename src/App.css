@@ -229,6 +229,40 @@ canvas {
   touch-action: none;
 }
 
+.draggable-final-score.social-results {
+  grid-template-columns: minmax(220px, 0.78fr) minmax(300px, 1fr);
+  grid-template-areas:
+    "score board"
+    "note board"
+    "actions board";
+  align-items: center;
+  width: min(760px, calc(100vw - 44px));
+}
+
+.social-results > .score-panel {
+  grid-area: score;
+  min-width: 0;
+  max-width: none;
+  width: 100%;
+}
+
+.social-results > .final-score-note {
+  grid-area: note;
+  width: 100%;
+  max-width: none;
+}
+
+.social-results > .score-actions {
+  grid-area: actions;
+}
+
+.social-results > .challenge-panel {
+  grid-area: board;
+  width: 100%;
+  max-width: none;
+  justify-self: stretch;
+}
+
 .draggable-final-score .score-panel {
   cursor: grab;
 }
@@ -307,29 +341,32 @@ canvas {
 .play-overlay button {
   pointer-events: auto;
   padding: 16px 26px;
-  color: var(--button-text);
-  background: var(--accent);
-  box-shadow: 0 18px 54px rgba(103, 232, 249, 0.24);
   font-size: 1.15rem;
 }
 
 .start-panel {
   display: grid;
-  gap: 12px;
+  gap: 14px;
   place-items: center;
   pointer-events: auto;
 }
 
 .start-panel p {
+  position: relative;
   margin: 0;
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  border: 1px solid rgba(103, 232, 249, 0.28);
   border-radius: 8px;
-  padding: 8px 12px;
+  padding: 9px 14px;
   color: var(--text);
-  background: var(--panel-soft);
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.72), rgba(2, 6, 23, 0.48)),
+    var(--panel-soft);
   backdrop-filter: blur(14px);
-  font-size: 0.95rem;
-  font-weight: 850;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 16px 42px rgba(0, 0, 0, 0.22);
+  font-size: 0.98rem;
+  font-weight: 900;
   line-height: 1.2;
 }
 
@@ -346,7 +383,16 @@ canvas {
   width: 54px;
   height: 54px;
   padding: 0;
-  font-size: 1.28rem;
+}
+
+.daily-button svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
 }
 
 .ready-panel,
@@ -450,6 +496,22 @@ canvas {
   border-radius: 999px;
   padding: 4px 8px;
   background: rgba(148, 163, 184, 0.08);
+}
+
+.daily-meta .is-unplayed {
+  opacity: 0.52;
+}
+
+.daily-meta .is-played {
+  border-color: rgba(34, 197, 94, 0.42);
+  color: #bbf7d0;
+  background: rgba(34, 197, 94, 0.14);
+}
+
+.daily-meta .is-streak {
+  border-color: rgba(250, 204, 21, 0.42);
+  color: #fde68a;
+  background: rgba(250, 204, 21, 0.14);
 }
 
 .challenge-share-row {
@@ -589,26 +651,82 @@ canvas {
 }
 
 button {
-  border: 0;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 999px;
   padding: 9px 13px;
   color: var(--button-text);
-  background: var(--accent);
+  background:
+    radial-gradient(circle at 50% -60%, rgba(255, 255, 255, 0.86), transparent 36px),
+    linear-gradient(180deg, color-mix(in srgb, var(--accent), #ffffff 20%), var(--accent));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -6px 12px rgba(0, 0, 0, 0.16),
+    0 10px 24px rgba(0, 0, 0, 0.26),
+    0 0 0 rgba(103, 232, 249, 0);
   font: inherit;
   font-weight: 800;
   cursor: pointer;
   transition:
     opacity 160ms ease,
-    transform 160ms ease,
-    background 160ms ease;
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 180ms ease,
+    filter 180ms ease;
+}
+
+button::before {
+  content: "";
+  position: absolute;
+  inset: 2px 7px auto;
+  z-index: -1;
+  height: 40%;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.42), transparent);
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+button::after {
+  content: "";
+  position: absolute;
+  inset: -30% auto -30% -60%;
+  z-index: -1;
+  width: 46%;
+  transform: skewX(-18deg);
+  background: rgba(255, 255, 255, 0.34);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 180ms ease,
+    transform 320ms ease;
 }
 
 button:hover:not(:disabled) {
-  transform: translateY(-1px);
+  transform: translateY(-2px) scale(1.025);
+  filter: saturate(1.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.62),
+    inset 0 -7px 14px rgba(0, 0, 0, 0.16),
+    0 16px 34px rgba(0, 0, 0, 0.3),
+    0 0 28px rgba(103, 232, 249, 0.28);
+}
+
+button:hover:not(:disabled)::after {
+  opacity: 1;
+  transform: translateX(340%) skewX(-18deg);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px) scale(0.985);
+  box-shadow:
+    inset 0 2px 8px rgba(0, 0, 0, 0.24),
+    0 6px 16px rgba(0, 0, 0, 0.22);
 }
 
 .skip-replay-button:hover:not(:disabled) {
-  transform: translateX(-50%) translateY(-1px);
+  transform: translateX(-50%) translateY(-2px) scale(1.025);
 }
 
 button:disabled {
@@ -618,7 +736,13 @@ button:disabled {
 
 button.secondary {
   color: var(--text);
-  background: rgba(148, 163, 184, 0.18);
+  background:
+    radial-gradient(circle at 50% -60%, rgba(255, 255, 255, 0.22), transparent 34px),
+    linear-gradient(180deg, rgba(148, 163, 184, 0.28), rgba(51, 65, 85, 0.32));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -6px 12px rgba(0, 0, 0, 0.12),
+    0 10px 24px rgba(0, 0, 0, 0.2);
 }
 
 .theme-switch,
@@ -840,6 +964,20 @@ button.compact {
     gap: 6px;
   }
 
+  .draggable-final-score.social-results {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "score"
+      "board"
+      "note"
+      "actions";
+    width: min(320px, calc(100vw - 34px));
+  }
+
+  .social-results > .challenge-panel {
+    width: 100%;
+  }
+
   .score-actions button,
   .skip-replay-button,
   .challenge-dropdown-toggle {
@@ -853,6 +991,31 @@ button.compact {
     width: min(300px, calc(100vw - 40px));
     padding: 10px;
     font-size: 0.76rem;
+  }
+
+  .start-panel {
+    gap: 9px;
+  }
+
+  .start-panel p {
+    max-width: min(270px, calc(100vw - 48px));
+    padding: 7px 10px;
+    font-size: 0.76rem;
+  }
+
+  .play-overlay button {
+    padding: 11px 18px;
+    font-size: 0.88rem;
+  }
+
+  .daily-button {
+    width: 43px;
+    height: 43px;
+  }
+
+  .daily-button svg {
+    width: 18px;
+    height: 18px;
   }
 
   .ready-panel strong,
