@@ -1177,9 +1177,9 @@ function App() {
                 </label>
                 {dailyError && <p className="challenge-error">{dailyError}</p>}
                 <DailyLeaderboard daily={daily} playerId={playerId} />
-                <button type="button" disabled={!isAllowedInitials(playerInitials)} onClick={startGame}>
+                <FlipButton type="button" disabled={!isAllowedInitials(playerInitials)} hoverText="Today" onClick={startGame}>
                   Play Daily
-                </button>
+                </FlipButton>
               </div>
             ) : challengeLoading ? (
               <div className="ready-panel">
@@ -1200,12 +1200,12 @@ function App() {
                 <strong>{challenge ? getChallengeTitle(challenge) : 'Challenge'}</strong>
                 {challenge && <ChallengeLeaderboard challenge={challenge} playerId={playerId} />}
                 <div className="score-actions">
-                  <button type="button" onClick={copyChallengeLink}>
+                  <FlipButton type="button" hoverText="Copy" onClick={copyChallengeLink}>
                     {challengeCopied ? 'Copied' : 'Copy Link'}
-                  </button>
-                  <button type="button" className="secondary" onClick={startNewRound}>
+                  </FlipButton>
+                  <FlipButton type="button" className="secondary wave-text" hoverText="Fresh Board" onClick={startNewRound}>
                     New Game
-                  </button>
+                  </FlipButton>
                 </div>
               </div>
             ) : activeChallengeSlug && challenge ? (
@@ -1224,25 +1224,44 @@ function App() {
                 </label>
                 {challengeError && <p className="challenge-error">{challengeError}</p>}
                 <ChallengeLeaderboard challenge={challenge} playerId={playerId} />
-                <button type="button" disabled={!isAllowedInitials(playerInitials)} onClick={startGame}>
+                <FlipButton type="button" disabled={!isAllowedInitials(playerInitials)} hoverText="Beat It" onClick={startGame}>
                   Play Challenge
-                </button>
+                </FlipButton>
               </div>
             ) : (
-              <div className="start-panel">
-                <p>Click where the ball will bounce next</p>
-                <div className="start-actions">
-                  <button type="button" onClick={startGame}>
-                    Play
+              <div className="start-card">
+                <BallKnowledgeIcon />
+                <h1>Ball Knowledge</h1>
+                <div className="start-tagline" aria-label="Predict the next rebound">
+                  <span>Predict the next rebound</span>
+                  <span aria-hidden="true">Bring a protractor</span>
+                </div>
+                <div className="start-card-actions">
+                  <button type="button" className="start-menu-button primary-start-button" onClick={startGame}>
+                    <span className="start-icon-flip">
+                      <PlayIcon />
+                      <TargetIcon />
+                    </span>
+                    <span className="start-label-flip">
+                      <span>Play</span>
+                      <span>{renderWaveText("Let's Go")}</span>
+                    </span>
                   </button>
                   <button
                     type="button"
-                    className="daily-button secondary"
+                    className="start-menu-button daily-start-button"
                     aria-label="Daily challenge"
                     title="Daily challenge"
                     onClick={openDailyChallenge}
                   >
-                    <CalendarIcon />
+                    <span className="daily-icon-flip start-icon-flip">
+                      <CalendarIcon />
+                      <FlameIcon />
+                    </span>
+                    <span className="start-label-flip daily-label-flip">
+                      <span>Daily</span>
+                      <span>Streak: {dailyStreak}</span>
+                    </span>
                   </button>
                 </div>
               </div>
@@ -1280,22 +1299,24 @@ function App() {
                 score={displayScore}
                 onHover={setHighlightedBounce}
                 results={visibleScoreResults}
+                variant="grid"
               />
               {finalMessage && <p className="final-score-note">{finalMessage}</p>}
               <div className="score-actions">
-                <button type="button" onClick={startNewRound}>
+                <FlipButton type="button" className="wave-text" hoverText="Fresh Board" onClick={startNewRound}>
                   New Game
-                </button>
-                <button
+                </FlipButton>
+                <FlipButton
                   type="button"
                   className="secondary"
+                  hoverText="Run It Back"
                   onClick={() => {
                     enableAudio()
                     watchOneBounceReplay()
                   }}
                 >
                   Watch Replay
-                </button>
+                </FlipButton>
               </div>
               {activeDailyDate ? (
                 <DailyPanel
@@ -1323,14 +1344,15 @@ function App() {
                 />
               ) : (
                 <div className="challenge-dropdown">
-                  <button
+                  <FlipButton
                     type="button"
                     className="challenge-dropdown-toggle secondary"
                     aria-expanded={challengePanelOpen}
+                    hoverText="Send It"
                     onClick={() => setChallengePanelOpen((open) => !open)}
                   >
                     Challenge Your Friends
-                  </button>
+                  </FlipButton>
                   {challengePanelOpen && (
                   <ChallengePanel
                     actionBusy={challengeActionBusy}
@@ -2255,9 +2277,10 @@ type ScorePanelProps = {
   onHover?: (label: number | null) => void
   score: number
   results: LabeledTurnResult[]
+  variant?: 'grid' | 'list'
 }
 
-function ScorePanel({ label, maxScore, onHover, score, results }: ScorePanelProps) {
+function ScorePanel({ label, maxScore, onHover, score, results, variant = 'list' }: ScorePanelProps) {
   const breakdownRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -2275,10 +2298,10 @@ function ScorePanel({ label, maxScore, onHover, score, results }: ScorePanelProp
       <strong>
         {formatScore(score, maxScore)}
       </strong>
-      <div className="score-breakdown" ref={breakdownRef}>
+      <div className={`score-breakdown ${variant === 'grid' ? 'score-breakdown-grid' : ''}`} ref={breakdownRef}>
         {results.map((result, index) => (
           <span
-            className="score-line"
+            className={`score-line ${variant === 'grid' ? 'score-token' : ''}`}
             key={`${result.target.time}-${index}`}
             onBlur={() => onHover?.(null)}
             onFocus={() => onHover?.(result.label)}
@@ -2287,13 +2310,46 @@ function ScorePanel({ label, maxScore, onHover, score, results }: ScorePanelProp
             style={getScoreStyle(result.points, result.maxPoints)}
             tabIndex={0}
           >
-            <span>Bounce {result.label}</span>
-            <span>{result.points}/{result.maxPoints}</span>
+            {variant === 'grid' ? (
+              <>
+                <span className="score-token-label">{result.label}</span>
+                <span className="score-token-score">{result.points}/{result.maxPoints}</span>
+              </>
+            ) : (
+              <>
+                <span>Bounce {result.label}</span>
+                <span>{result.points}/{result.maxPoints}</span>
+              </>
+            )}
           </span>
         ))}
       </div>
     </div>
   )
+}
+
+type FlipButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  children: React.ReactNode
+  hoverText: string
+}
+
+function FlipButton({ children, className, hoverText, ...props }: FlipButtonProps) {
+  return (
+    <button className={`flip-button ${className ?? ''}`.trim()} {...props}>
+      <span>{children}</span>
+      <span aria-hidden="true">
+        {renderWaveText(hoverText)}
+      </span>
+    </button>
+  )
+}
+
+function renderWaveText(text: string) {
+  return Array.from(text).map((letter, index) => (
+    <i key={`${letter}-${index}`} style={{ '--letter-index': index } as React.CSSProperties}>
+      {letter === ' ' ? '\u00a0' : letter}
+    </i>
+  ))
 }
 
 type ChallengePanelProps = {
@@ -2362,24 +2418,24 @@ function ChallengePanel({
       )}
 
       {canCreateChallenge && (
-        <button type="button" disabled={!initialsAllowed || actionBusy} onClick={onCreate}>
+        <FlipButton type="button" disabled={!initialsAllowed || actionBusy} hoverText="Send It" onClick={onCreate}>
           {actionBusy ? 'Creating' : 'Create Challenge'}
-        </button>
+        </FlipButton>
       )}
 
       {canSubmitScore && (
-        <button type="button" disabled={!initialsAllowed || actionBusy} onClick={onSubmit}>
+        <FlipButton type="button" disabled={!initialsAllowed || actionBusy} hoverText="Submit" onClick={onSubmit}>
           {actionBusy ? 'Submitting' : 'Submit Score'}
-        </button>
+        </FlipButton>
       )}
 
       {challenge && (
         <>
           <div className="challenge-share-row">
             <span>{shareUrl}</span>
-            <button type="button" className="secondary compact" onClick={onCopy}>
+            <FlipButton type="button" className="secondary compact" hoverText="Copy" onClick={onCopy}>
               {copied ? 'Copied' : 'Copy'}
-            </button>
+            </FlipButton>
           </div>
           <ChallengeLeaderboard challenge={challenge} playerId={playerId} />
         </>
@@ -2459,9 +2515,46 @@ function isPlayerEntry(entry: ChallengeRecord['leaderboard'][number], playerId: 
 function CalendarIcon() {
   return (
     <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
-      <rect x="4" y="5" width="16" height="15" rx="3" />
-      <path d="M8 3v4M16 3v4M4 10h16" />
-      <path d="M8 14h.01M12 14h.01M16 14h.01M8 17h.01M12 17h.01" />
+      <rect x="5.5" y="6.5" width="13" height="12" rx="2.5" />
+      <path d="M8.5 4.8v3.4M15.5 4.8v3.4M5.5 10.2h13" />
+      <path d="M9 13.5h.01M12 13.5h.01M15 13.5h.01M9 16h.01M12 16h.01M15 16h.01" />
+    </svg>
+  )
+}
+
+function PlayIcon() {
+  return (
+    <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+      <path d="M8 5.4v13.2L18.5 12 8 5.4Z" />
+    </svg>
+  )
+}
+
+function TargetIcon() {
+  return (
+    <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="7" />
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+    </svg>
+  )
+}
+
+function FlameIcon() {
+  return (
+    <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+      <path d="M12 21c-3.5 0-6.2-2.4-6.2-5.9 0-2.9 1.8-5.2 4-7.1.2 1.6.8 2.7 1.8 3.5.7-2.6 2.1-4.7 4.1-6.5.3 3 2.5 4.7 2.5 8.3 0 4.5-2.8 7.7-6.2 7.7Z" />
+    </svg>
+  )
+}
+
+function BallKnowledgeIcon() {
+  return (
+    <svg className="ball-knowledge-icon" aria-hidden="true" focusable="false" viewBox="0 0 220 104">
+      <path className="bounce-path" d="M24 70 62 30 101 72 143 25 196 57" />
+      <circle className="bounce-ball" cx="196" cy="57" r="16" />
+      <path className="spark" d="M32 20v8M28 24h8" />
+      <path className="spark small" d="M54 8v5M51.5 10.5h5" />
     </svg>
   )
 }
