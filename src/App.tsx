@@ -1171,10 +1171,10 @@ function App() {
                 <DailyMeta streak={dailyStreak} playedToday />
                 {daily && <DailyLeaderboard daily={daily} playerId={playerId} />}
                 <div className="score-actions">
-                  <FlipButton type="button" hoverText="Copy" onClick={copyDailyLink}>
+                  <FlipButton type="button" hoverText="Copy" className="secondary" onClick={copyDailyLink}>
                     {dailyCopied ? 'Copied' : 'Copy Link'}
                   </FlipButton>
-                  <button type="button" className="secondary" onClick={startNewRound}>
+                  <button type="button" onClick={startNewRound}>
                     New Game
                   </button>
                 </div>
@@ -2396,8 +2396,8 @@ function ChallengeCreatePanel({
             value={initials}
           />
         </label>
-        <FlipButton type="button" disabled={!initialsAllowed || actionBusy} hoverText="Send It" onClick={onCreate}>
-          {actionBusy ? 'Creating' : 'Challenge Your Friends'}
+        <FlipButton type="button" className="secondary" disabled={!initialsAllowed || actionBusy} hoverText="Send It" onClick={onCreate}>
+          {actionBusy ? 'Creating' : 'Challenge a Friend'}
         </FlipButton>
       </div>
 

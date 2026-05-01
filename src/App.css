@@ -296,6 +296,7 @@ canvas {
   box-shadow: 0 24px 72px rgba(0, 0, 0, 0.32);
   pointer-events: auto;
   touch-action: none;
+  justify-items: center;
 }
 
 .draggable-final-score.social-results {
@@ -347,9 +348,10 @@ canvas {
 }
 
 .draggable-final-score > .score-actions {
-  width: 100%;
+  width: 70%;
   border-top: 1px solid rgba(148, 163, 184, 0.14);
   padding-top: 2px;
+  flex-direction: column;
 }
 
 .draggable-final-score .score-panel {
@@ -720,9 +722,8 @@ canvas {
 
 .challenge-create-row .flip-button {
   width: 100%;
-  min-height: 42px;
-  padding: 9px 12px;
-  font-size: 0.82rem;
+  padding: 2px 2px;
+  font-size: 0.9rem;
 }
 
 .initials-field {
@@ -1280,6 +1281,11 @@ button.compact {
     gap: 6px;
   }
 
+
+  .draggable-final-score > .score-actions {
+    width: 100%;
+  }
+
   .draggable-final-score.social-results {
     grid-template-columns: 1fr;
     grid-template-areas:
@@ -1308,7 +1314,7 @@ button.compact {
   }
 
   .challenge-create-row {
-    grid-template-columns: 1fr;
+    grid-template-columns:  1fr 1fr;
   }
 
   .start-card {
