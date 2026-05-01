@@ -129,20 +129,27 @@ canvas {
   color: var(--muted);
   font-size: 0.8rem;
   font-weight: 650;
+}
+
+.score-breakdown,
+.challenge-leaderboard {
   scrollbar-color: var(--scroll-thumb) var(--scroll-track);
   scrollbar-width: thin;
 }
 
-.score-breakdown::-webkit-scrollbar {
+.score-breakdown::-webkit-scrollbar,
+.challenge-leaderboard::-webkit-scrollbar {
   width: 8px;
 }
 
-.score-breakdown::-webkit-scrollbar-track {
+.score-breakdown::-webkit-scrollbar-track,
+.challenge-leaderboard::-webkit-scrollbar-track {
   border-radius: 999px;
   background: var(--scroll-track);
 }
 
-.score-breakdown::-webkit-scrollbar-thumb {
+.score-breakdown::-webkit-scrollbar-thumb,
+.challenge-leaderboard::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: 999px;
   background: var(--scroll-thumb);
@@ -719,9 +726,6 @@ canvas {
 }
 
 .initials-field {
-  display: grid;
-  grid-template-columns: 1fr 108px;
-  gap: 10px;
   align-items: center;
   color: var(--muted);
   font-size: 0.78rem;
@@ -849,6 +853,7 @@ canvas {
   gap: 4px;
   max-height: 170px;
   overflow: auto;
+  padding-right: 2px;
 }
 
 .challenge-entry {
