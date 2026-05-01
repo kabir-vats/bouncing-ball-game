@@ -1218,10 +1218,10 @@ function App() {
                 <strong>{challenge ? getChallengeTitle(challenge) : 'Challenge'}</strong>
                 {challenge && <ChallengeLeaderboard challenge={challenge} playerId={playerId} />}
                 <div className="score-actions">
-                  <FlipButton type="button" hoverText="Copy" onClick={copyChallengeLink}>
+                  <FlipButton type="button" className="secondary" hoverText="Copy" onClick={copyChallengeLink}>
                     {challengeCopied ? 'Copied' : 'Copy Link'}
                   </FlipButton>
-                  <FlipButton type="button" className="secondary wave-text" hoverText="Fresh Board" onClick={startNewRound}>
+                  <FlipButton type="button" className="wave-text" hoverText="Fresh Board" onClick={startNewRound}>
                     New Game
                   </FlipButton>
                 </div>
