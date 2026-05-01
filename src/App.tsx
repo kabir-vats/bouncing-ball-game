@@ -129,6 +129,27 @@ const gameOverMessages = [
   'Elite Ball Knowledge',
 ]
 
+// keyboard patch
+function restoreGameStageAfterKeyboard() {
+  const restore = () => {
+    window.scrollTo({
+      top: 0,
+      left: 0,
+      behavior: 'auto',
+    })
+
+    document.querySelector<HTMLElement>('.game-stage')?.scrollIntoView({
+      block: 'start',
+      inline: 'nearest',
+      behavior: 'auto',
+    })
+  }
+
+  requestAnimationFrame(restore)
+  window.setTimeout(restore, 80)
+  window.setTimeout(restore, 250)
+}
+
 function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const animationRef = useRef<number | null>(null)
@@ -1188,6 +1209,7 @@ function App() {
                   <input
                     aria-label="Leaderboard initials"
                     maxLength={3}
+                    onBlur={restoreGameStageAfterKeyboard}
                     onChange={(event) => setPlayerInitials(cleanInitialsInput(event.target.value))}
                     placeholder={initialsPlaceholder}
                     value={playerInitials}
@@ -1234,6 +1256,7 @@ function App() {
                   <input
                     aria-label="Leaderboard initials"
                     maxLength={3}
+                    onBlur={restoreGameStageAfterKeyboard}
                     onChange={(event) => setPlayerInitials(cleanInitialsInput(event.target.value))}
                     placeholder={initialsPlaceholder}
                     value={playerInitials}
@@ -2391,6 +2414,7 @@ function ChallengeCreatePanel({
           <input
             aria-label="Leaderboard initials"
             maxLength={3}
+            onBlur={restoreGameStageAfterKeyboard}
             onChange={(event) => onInitialsChange(cleanInitialsInput(event.target.value))}
             placeholder={initialsPlaceholder}
             value={initials}
@@ -2455,6 +2479,7 @@ function ChallengePanel({
           <input
             aria-label="Leaderboard initials"
             maxLength={3}
+            onBlur={restoreGameStageAfterKeyboard}
             onChange={(event) => onInitialsChange(cleanInitialsInput(event.target.value))}
             placeholder={initialsPlaceholder}
             value={initials}
