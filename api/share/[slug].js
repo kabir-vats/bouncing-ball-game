@@ -10,13 +10,13 @@ export default async function handler(req, res) {
   const origin = getOrigin(req)
   const playUrl = `${origin}/?challenge=${encodeURIComponent(slug)}`
   const imageUrl = `${origin}/api/og/challenge/${encodeURIComponent(slug)}`
-  let title = 'Beat this Bounce Call board'
+  let title = 'Beat this board and check your Ball Knowledge'
   let description = 'One board, three lives, and one official attempt.'
 
   try {
     const challenge = await fetchChallenge(slug)
-    title = `Beat ${challenge.creatorInitials}'s Bounce Call score`
-    description = `${challenge.creatorInitials} scored ${challenge.creatorScore}. Can you call the bounces better?`
+    title = `Surpass ${challenge.creatorInitials}'s score`
+    description = `${challenge.creatorInitials} scored ${challenge.creatorScore}. Is your ball knowledge more elite?`
   } catch {
     // Keep the share page useful before the database is configured.
   }
