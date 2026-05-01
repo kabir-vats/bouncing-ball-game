@@ -1,73 +1,61 @@
-# React + TypeScript + Vite
+![Ball Knowledge Thumbnail](public/share/ball-knowledge-share.png)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+# Ball Knowledge
 
-Currently, two official plugins are available:
+Ball Knowledge is a browser game about predicting where a bouncing ball will rebound next. Players get three lives. The game generates random boards with random different obstacle layouts, so every game is different. The game has a social aspect, where players can challenge their friends, or compete globally on the daily puzzle.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Features
 
-## React Compiler
+- Random boards with local best-score tracking.
+- Shareable friend challenges with per-challenge leaderboards.
+- Daily challenge boards with daily leaderboards and local streak state.
+- Server-side score verification, initials filtering, and API rate limits.
+- Open Graph / Twitter share metadata for root, challenge, and daily links.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Development
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```sh
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Vite runs the client app. Vercel API rewrites are not emulated by plain Vite, so use Vercel's local runtime when testing share pages or API routes end to end:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```sh
+vercel dev
 ```
+
+## Checks
+
+```sh
+npm run lint
+npm run test
+npm run build
+```
+
+## Sharing
+
+Public share pages:
+
+- Challenge: `/c/:slug`
+- Daily: `/d/YYYY-MM-DD`
+
+Both pages emit crawler-friendly metadata and use the static preview image at:
+
+```text
+/share/ball-knowledge-share.png
+```
+
+After deploying, verify:
+
+```sh
+curl -I https://ball-knowledge.kabibi.io/share/ball-knowledge-share.png
+curl https://ball-knowledge.kabibi.io/c/YOUR_SLUG
+curl https://ball-knowledge.kabibi.io/d/2026-05-01
+```
+
+Discord and other chat apps cache previews aggressively. If a preview was previously broken, test with a fresh challenge slug or add a harmless query string while debugging.
+
+## Deployment
+
+The app is set up for Vercel. `vercel.json` rewrites challenge and daily share URLs to serverless functions, then falls back to the Vite app for normal gameplay routes.

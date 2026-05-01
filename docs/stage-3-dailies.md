@@ -45,7 +45,7 @@ notify pgrst, 'reload schema';
 
 Notes:
 
-- The daily date is UTC, so everyone gets the same board.
+- The daily date is keyed to Pacific time (`America/Los_Angeles`), so the board rolls over at Pacific midnight.
 - The API creates a `daily_boards` row lazily the first time that date is opened.
 - One official attempt per browser is stored in localStorage.
 - Supabase also rejects duplicate daily scores per `player_id` through the unique constraint.

@@ -75,5 +75,5 @@ notify pgrst, 'reload schema';
 
 - App-created challenge links use `/c/:slug`.
 - Vercel rewrites `/c/:slug` to `/api/share/:slug`.
-- The share endpoint returns Open Graph tags and an OG image URL, then redirects real players to `/?challenge=:slug`.
+- The share endpoint returns Open Graph tags with the static preview image, then redirects real players to `/?challenge=:slug`.
 - The app loads the challenge by slug and starts the same seeded board.

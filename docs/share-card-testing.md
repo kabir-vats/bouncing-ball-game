@@ -9,6 +9,8 @@ Those pages emit Open Graph tags and immediately redirect players into the app. 
 
 - `/share/ball-knowledge-share.png`
 
+The share page metadata should include absolute HTTPS image URLs, `og:image:type`, image dimensions, `og:image:alt`, and matching Twitter card tags.
+
 ## Local testing
 
 Vite does not run the Vercel API rewrites, so `npm run dev` is not enough for testing unfurl pages.
@@ -27,7 +29,7 @@ curl http://localhost:3000/d/2026-05-01
 curl http://localhost:3000/c/YOUR_SLUG
 ```
 
-The image response should be `Content-Type: image/png`. The share page HTML should include `/share/ball-knowledge-share.png` as `og:image`.
+The image response should be `Content-Type: image/png`. The share page HTML should include `/share/ball-knowledge-share.png` as `og:image`, `og:image:secure_url`, and `twitter:image`.
 
 ## Deployed testing
 

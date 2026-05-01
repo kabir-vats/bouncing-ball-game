@@ -1,12 +1,14 @@
 import { supabase } from './_supabase.js'
 
+const dailyTimeZone = 'America/Los_Angeles'
+
 export function cleanDate(value) {
   const date = String(value ?? '')
   return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : getTodayKey()
 }
 
 export function getTodayKey() {
-  return new Date().toISOString().slice(0, 10)
+  return getDateKeyInTimeZone(new Date(), dailyTimeZone)
 }
 
 export function createDailySeed(date) {
@@ -53,4 +55,15 @@ export async function fetchDaily(date) {
       createdAt: score.created_at,
     })),
   }
+}
+
+function getDateKeyInTimeZone(date, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone,
+    year: 'numeric',
+  }).formatToParts(date)
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+  return `${values.year}-${values.month}-${values.day}`
 }

@@ -32,6 +32,9 @@ export default async function handler(req, res) {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${escapeHtml(title)}</title>
     <meta name="description" content="${escapeHtml(description)}" />
+    <link rel="canonical" href="${origin}/d/${escapeHtml(date)}" />
+    <meta name="theme-color" content="#070b14" />
+    <meta property="og:site_name" content="Ball Knowledge" />
     <meta property="og:title" content="${escapeHtml(title)}" />
     <meta property="og:description" content="${escapeHtml(description)}" />
     <meta property="og:type" content="website" />
@@ -41,8 +44,12 @@ export default async function handler(req, res) {
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1731" />
     <meta property="og:image:height" content="909" />
+    <meta property="og:image:alt" content="Ball Knowledge" />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="${escapeHtml(title)}" />
+    <meta name="twitter:description" content="${escapeHtml(description)}" />
     <meta name="twitter:image" content="${imageUrl}" />
+    <meta name="twitter:image:alt" content="Ball Knowledge" />
     <meta http-equiv="refresh" content="0; url=${playUrl}" />
   </head>
   <body>
