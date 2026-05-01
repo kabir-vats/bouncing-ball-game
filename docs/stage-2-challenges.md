@@ -59,7 +59,7 @@ notify pgrst, 'reload schema';
 - One official attempt per browser is enforced with local storage.
 - The API also prevents duplicate scores per `player_id` per challenge.
 - No sign-in is required, so determined users can replay in a different browser or clear storage.
-- The API stores the submitted run payload. A later hardening pass should recompute scores server-side from the seed and turns before accepting leaderboard entries.
+- The API recomputes leaderboard scores server-side from the seed and submitted guesses, stores the computed score, and logs any mismatch with the browser's local score.
 
 ## Share URL Flow
 

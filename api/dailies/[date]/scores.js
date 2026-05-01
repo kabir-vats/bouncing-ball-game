@@ -1,5 +1,5 @@
 import { cleanDate, ensureDaily, fetchDaily } from '../../_dailies.js'
-import { validateScorePayload } from '../../_challenges.js'
+import { verifyScorePayload } from '../../_challenges.js'
 import { json, readJson, requireMethod } from '../../_http.js'
 import { supabase } from '../../_supabase.js'
 
@@ -11,13 +11,14 @@ export default async function handler(req, res) {
   const dailyDate = cleanDate(req.query.date)
 
   try {
-    const score = validateScorePayload(await readJson(req))
+    const body = await readJson(req)
+    const daily = await ensureDaily(dailyDate)
+    const score = verifyScorePayload(body, daily.seed, 'submit-daily-score')
     if (!score) {
       json(res, 400, { error: 'Invalid score payload.' })
       return
     }
 
-    await ensureDaily(dailyDate)
     await supabase('daily_scores', {
       method: 'POST',
       prefer: 'return=minimal',

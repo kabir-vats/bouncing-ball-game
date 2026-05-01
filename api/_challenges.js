@@ -1,4 +1,5 @@
 import { supabase } from './_supabase.js'
+import { scoreRun } from '../shared/game.js'
 
 export function cleanInitials(value) {
   return String(value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3)
@@ -16,21 +17,74 @@ export function createSlug() {
 
 export function validateScorePayload(body) {
   const initials = cleanInitials(body.initials ?? body.creatorInitials)
-  const score = Number(body.score)
-  const maxScore = Number(body.maxScore)
+  const localScore = Number(body.score)
+  const localMaxScore = Number(body.maxScore)
   const playerId = String(body.playerId ?? '').slice(0, 128)
 
-  if (initials.length !== 3 || !playerId || !Number.isFinite(score) || !Number.isFinite(maxScore)) {
+  if (initials.length !== 3 || !playerId || !Number.isFinite(localScore) || !Number.isFinite(localMaxScore)) {
     return null
   }
 
   return {
     initials,
     playerId,
-    score: Math.max(0, Math.floor(score)),
-    maxScore: Math.max(0, Math.floor(maxScore)),
-    turns: Array.isArray(body.turns) ? body.turns.slice(0, 64) : [],
+    localScore: Math.max(0, Math.floor(localScore)),
+    localMaxScore: Math.max(0, Math.floor(localMaxScore)),
+    guesses: extractGuesses(body),
   }
+}
+
+export function verifyScorePayload(body, seed, context) {
+  const payload = validateScorePayload(body)
+  const cleanSeed = Number(seed)
+
+  if (!payload || !Number.isSafeInteger(cleanSeed) || cleanSeed < 0) {
+    return null
+  }
+
+  const computed = scoreRun(cleanSeed, payload.guesses)
+
+  if (computed.score !== payload.localScore || computed.maxScore !== payload.localMaxScore) {
+    console.warn('Score mismatch', {
+      context,
+      seed: cleanSeed,
+      playerId: payload.playerId,
+      initials: payload.initials,
+      localScore: payload.localScore,
+      localMaxScore: payload.localMaxScore,
+      computedScore: computed.score,
+      computedMaxScore: computed.maxScore,
+      guesses: payload.guesses.length,
+    })
+  }
+
+  return {
+    initials: payload.initials,
+    playerId: payload.playerId,
+    score: computed.score,
+    maxScore: computed.maxScore,
+    turns: computed.turns,
+    localScore: payload.localScore,
+    localMaxScore: payload.localMaxScore,
+  }
+}
+
+function extractGuesses(body) {
+  const guesses = Array.isArray(body.guesses)
+    ? body.guesses
+    : Array.isArray(body.turns)
+      ? body.turns.map((turn) => turn?.guess ?? null)
+      : []
+
+  return guesses.slice(0, 64).map((guess) => {
+    if (!guess || typeof guess !== 'object') {
+      return null
+    }
+
+    const x = Number(guess.x)
+    const y = Number(guess.y)
+    return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null
+  })
 }
 
 export async function fetchChallenge(slug) {
@@ -65,4 +119,18 @@ export async function fetchChallenge(slug) {
       createdAt: score.created_at,
     })),
   }
+}
+
+export async function fetchChallengeSeed(slug) {
+  const clean = cleanSlug(slug)
+  const rows = await supabase(`challenges?slug=eq.${encodeURIComponent(clean)}&select=seed`)
+  const challenge = rows[0]
+
+  if (!challenge) {
+    const error = new Error('Challenge not found.')
+    error.status = 404
+    throw error
+  }
+
+  return challenge.seed
 }

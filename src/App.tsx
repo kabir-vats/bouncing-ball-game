@@ -13,11 +13,16 @@ import {
   type Bounce,
   type GameScene,
   type Point,
+  type ScoredTurn,
   boardCollisionInset,
   createRandomSeed,
   defaultGeneratorConfig,
+  finalLoopDuration,
   generateRandomScene,
+  getPredictionMaxScore,
+  getTrajectoryDistance,
   observeDuration,
+  scoreTurn,
   simulateTrajectory,
 } from './game'
 
@@ -29,15 +34,7 @@ type Phase =
   | 'end-ripple'
   | 'score-replay'
   | 'finished'
-type TurnResult = {
-  guess: Point | null
-  target: Bounce
-  distance: number
-  pathLength: number
-  maxPoints: number
-  points: number
-  timedOut: boolean
-}
+type TurnResult = ScoredTurn
 type LabeledTurnResult = TurnResult & {
   label: number
 }
@@ -94,13 +91,6 @@ const endlessStartSeconds = 5
 const endlessMinimumSeconds = 1
 const endlessGenerationBounces = 18
 const endlessLives = 3
-const finalLoopDuration = 180
-const scoreDistanceFactor = 0.18
-const minimumScoreTolerance = 28
-const maximumScoreTolerance = 120
-const minimumBounceMaxScore = 25
-const maximumBounceMaxScore = 200
-const maxScoreLogScale = 420
 const localHighScoreKey = 'bounce-call.local-best'
 const playerIdKey = 'bounce-call.player-id'
 const playerInitialsKey = 'bounce-call.player-initials'
@@ -444,6 +434,7 @@ function App() {
       playerId,
       score: totalScore,
       seed: board.seed,
+      guesses: serializeGuesses(turnResults),
       turns: serializeTurns(turnResults),
     }).then((nextChallenge) => {
       setChallenge(nextChallenge)
@@ -502,6 +493,8 @@ function App() {
       maxScore,
       playerId,
       score: totalScore,
+      seed: board.seed,
+      guesses: serializeGuesses(turnResults),
       turns: serializeTurns(turnResults),
     }).then((nextChallenge) => {
       setChallenge(nextChallenge)
@@ -514,6 +507,7 @@ function App() {
     })
   }, [
     activeChallengeSlug,
+    board.seed,
     challengeActionBusy,
     challengeAttemptStatus,
     maxScore,
@@ -548,6 +542,8 @@ function App() {
       maxScore,
       playerId,
       score: totalScore,
+      seed: board.seed,
+      guesses: serializeGuesses(turnResults),
       turns: serializeTurns(turnResults),
     }).then((nextDaily) => {
       setDaily(nextDaily)
@@ -559,7 +555,7 @@ function App() {
       setDailyError(error instanceof Error ? error.message : 'Could not submit daily score.')
       setDailyActionBusy(false)
     })
-  }, [activeDailyDate, dailyActionBusy, dailyAttemptStatus, maxScore, playerId, playerInitials, totalScore, turnResults])
+  }, [activeDailyDate, board.seed, dailyActionBusy, dailyAttemptStatus, maxScore, playerId, playerInitials, totalScore, turnResults])
 
   const copyChallengeLink = useCallback(() => {
     if (!challenge) {
@@ -1704,6 +1700,10 @@ function serializeTurns(results: TurnResult[]) {
   }))
 }
 
+function serializeGuesses(results: TurnResult[]) {
+  return results.map((result) => result.guess ? { x: result.guess.x, y: result.guess.y } : null)
+}
+
 async function copyText(text: string, label: string) {
   if (!navigator.clipboard) {
     window.prompt(label, text)
@@ -1869,22 +1869,6 @@ function getStateAtFast(samples: DrawOptions['samples'], time: number) {
     vx: previous.vx + (current.vx - previous.vx) * progress,
     vy: previous.vy + (current.vy - previous.vy) * progress,
   }
-}
-
-function getSampleIndexAtOrBefore(samples: DrawOptions['samples'], time: number) {
-  let low = 0
-  let high = samples.length - 1
-
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2)
-    if (samples[mid].time <= time) {
-      low = mid + 1
-    } else {
-      high = mid - 1
-    }
-  }
-
-  return Math.max(0, high)
 }
 
 function getSampleIndexAtOrAfter(samples: DrawOptions['samples'], time: number) {
@@ -2707,33 +2691,6 @@ function getVisibleTime(phase: Phase, stepTime: number, pauseTime: number, final
   return pauseTime
 }
 
-function scoreTurn(guess: Point | null, target: Bounce, timedOut: boolean, pathLength: number): TurnResult {
-  const maxPoints = getBounceMaxScore(pathLength)
-
-  if (!guess) {
-    return {
-      guess,
-      target,
-      distance: Infinity,
-      pathLength,
-      maxPoints,
-      points: 0,
-      timedOut,
-    }
-  }
-
-  const distance = getDistance(guess, target)
-  return {
-    guess,
-    target,
-    distance,
-    pathLength,
-    maxPoints,
-    points: getNormalizedBounceScore(distance, pathLength, maxPoints),
-    timedOut,
-  }
-}
-
 function getEndlessGuesses(
   results: TurnResult[],
   activeGuess: Point | null,
@@ -2787,20 +2744,6 @@ function getAnimatedReplayScore(results: TurnResult[], replayTime: number) {
     const easedProgress = 1 - Math.pow(1 - countUpProgress, 3)
     return total + Math.round(result.points * easedProgress)
   }, 0)
-}
-
-function getNormalizedBounceScore(distance: number, pathLength: number, maxPoints: number) {
-  if (!Number.isFinite(distance)) {
-    return 0
-  }
-
-  const tolerance = clamp(pathLength * scoreDistanceFactor, minimumScoreTolerance, maximumScoreTolerance)
-  return Math.round(maxPoints * Math.exp(-((distance / tolerance) ** 2)))
-}
-
-function getBounceMaxScore(pathLength: number) {
-  const progress = Math.log1p(Math.max(0, pathLength) / maxScoreLogScale) / Math.log1p(4)
-  return Math.round(minimumBounceMaxScore + (maximumBounceMaxScore - minimumBounceMaxScore) * clamp(progress, 0, 1))
 }
 
 function getGuessColors(tone: GuessTone | undefined, score = 0.65) {
@@ -2881,10 +2824,6 @@ function getScoreRatio(result: TurnResult) {
   return result.maxPoints > 0 ? result.points / result.maxPoints : 0
 }
 
-function getPredictionMaxScore(results: TurnResult[]) {
-  return results.reduce((total, result) => total + result.maxPoints, 0)
-}
-
 function getTrailSegments(samples: DrawOptions['samples']): TrailSegment[] {
   if (samples.length < 2) {
     return []
@@ -2925,26 +2864,6 @@ function getTrailSegments(samples: DrawOptions['samples']): TrailSegment[] {
   }
 
   return segments
-}
-
-function getTrajectoryDistance(samples: DrawOptions['samples'], fromTime: number, toTime: number) {
-  if (toTime <= fromTime) {
-    return 0
-  }
-
-  const fromState = getStateAtFast(samples, fromTime)
-  const toState = getStateAtFast(samples, toTime)
-  const startIndex = getSampleIndexAtOrAfter(samples, fromTime)
-  const endIndex = getSampleIndexAtOrBefore(samples, toTime)
-  let distance = 0
-  let previous = fromState
-
-  for (let index = startIndex; index <= endIndex; index += 1) {
-    distance += getDistance(previous, samples[index])
-    previous = samples[index]
-  }
-
-  return distance + getDistance(previous, toState)
 }
 
 function clamp(value: number, minimum: number, maximum: number) {

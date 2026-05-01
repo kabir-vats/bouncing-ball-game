@@ -45,4 +45,5 @@ Notes:
 - The API creates a `daily_boards` row lazily the first time that date is opened.
 - One official attempt per browser is stored in localStorage.
 - Supabase also rejects duplicate daily scores per `player_id` through the unique constraint.
+- The API recomputes submitted daily scores from the daily seed and submitted guesses before storing leaderboard entries.
 - Streak count and “played today” are local browser state for now.

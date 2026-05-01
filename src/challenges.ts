@@ -25,6 +25,7 @@ export type ChallengeRecord = {
 
 export type CreateChallengeInput = {
   creatorInitials: string
+  guesses: (ChallengeTurn['guess'])[]
   maxScore: number
   playerId: string
   score: number
@@ -33,10 +34,12 @@ export type CreateChallengeInput = {
 }
 
 export type SubmitChallengeScoreInput = {
+  guesses: (ChallengeTurn['guess'])[]
   initials: string
   maxScore: number
   playerId: string
   score: number
+  seed?: number
   turns: ChallengeTurn[]
 }
 

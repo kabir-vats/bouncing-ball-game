@@ -1,4 +1,4 @@
-import { fetchChallenge, createSlug, validateScorePayload } from './_challenges.js'
+import { fetchChallenge, createSlug, verifyScorePayload } from './_challenges.js'
 import { json, readJson, requireMethod } from './_http.js'
 import { supabase } from './_supabase.js'
 
@@ -9,10 +9,10 @@ export default async function handler(req, res) {
 
   try {
     const body = await readJson(req)
-    const score = validateScorePayload(body)
     const seed = Number(body.seed)
+    const score = verifyScorePayload(body, seed, 'create-challenge')
 
-    if (!score || !Number.isSafeInteger(seed) || seed < 0) {
+    if (!score) {
       json(res, 400, { error: 'Invalid challenge payload.' })
       return
     }
