@@ -111,7 +111,7 @@ const tutorialStoragePrefix = 'bounce-call.tutorial.'
 const seedQueryParam = 'seed'
 const challengeQueryParam = 'challenge'
 const dailyQueryParam = 'daily'
-const initialsPlaceholder = 'YOU'
+const initialsPlaceholder = 'INITIALS'
 const gameOverMessages = [
   'Boing Boing Boing Boing Boing',
   'Accurate Physics Verified™',
@@ -182,7 +182,6 @@ function App() {
   const [challengeError, setChallengeError] = useState('')
   const [challengeActionBusy, setChallengeActionBusy] = useState(false)
   const [challengeCopied, setChallengeCopied] = useState(false)
-  const [challengePanelOpen, setChallengePanelOpen] = useState(false)
   const [challengeAttemptStatus, setChallengeAttemptStatus] = useState<ChallengeAttemptStatus>(() =>
     getChallengeSlugFromAddress() ? readChallengeAttemptStatus(getChallengeSlugFromAddress() ?? '') : 'fresh',
   )
@@ -270,7 +269,6 @@ function App() {
     setChallenge(null)
     setChallengeError('')
     setChallengeCopied(false)
-    setChallengePanelOpen(false)
     setChallengeAttemptStatus('fresh')
     setDaily(null)
     setActiveDailyDate(null)
@@ -410,7 +408,6 @@ function App() {
     setTimerRemaining(endlessStartSeconds)
     setPauseBounceIndex(openingBounceIndex)
     setFinalMessage('')
-    setChallengePanelOpen(false)
     stepAnimationStartedAt.current = null
     stepAnimationFromTime.current = 0
     stepAnimationToTime.current = simulation.bounces[openingBounceIndex].time
@@ -471,7 +468,6 @@ function App() {
     setActiveChallengeSlug(null)
     setChallenge(null)
     setChallengeError('')
-    setChallengePanelOpen(false)
     setChallengeAttemptStatus('fresh')
     setActiveDailyDate(date)
     setDailyLoading(true)
@@ -1188,7 +1184,6 @@ function App() {
                 <strong>{formatDailyTitle(activeDailyDate)}</strong>
                 <DailyMeta streak={dailyStreak} playedToday={dailyAttemptStatus === 'submitted'} />
                 <label className="initials-field">
-                  <span>Initials</span>
                   <input
                     aria-label="Leaderboard initials"
                     maxLength={3}
@@ -1235,7 +1230,6 @@ function App() {
                 <p className="eyebrow">challenge</p>
                 <strong>{getChallengeTitle(challenge)}</strong>
                 <label className="initials-field">
-                  <span>Initials</span>
                   <input
                     aria-label="Leaderboard initials"
                     maxLength={3}
@@ -1361,41 +1355,22 @@ function App() {
                   initials={playerInitials}
                   isChallengeRun
                   onCopy={copyChallengeLink}
-                  onCreate={createChallengeFromRun}
                   onInitialsChange={setPlayerInitials}
                   onSubmit={submitCurrentChallengeScore}
                   playerId={playerId}
                   shareUrl={challengeShareUrl}
                 />
               ) : (
-                <div className="challenge-dropdown">
-                  <FlipButton
-                    type="button"
-                    className="challenge-dropdown-toggle secondary"
-                    aria-expanded={challengePanelOpen}
-                    hoverText="Send It"
-                    onClick={() => setChallengePanelOpen((open) => !open)}
-                  >
-                    Challenge Your Friends
-                  </FlipButton>
-                  {challengePanelOpen && (
-                  <ChallengePanel
-                    actionBusy={challengeActionBusy}
-                    attemptStatus={challengeAttemptStatus}
-                    challenge={challenge}
-                    copied={challengeCopied}
-                    error={challengeError}
-                    initials={playerInitials}
-                    isChallengeRun={Boolean(activeChallengeSlug)}
-                    onCopy={copyChallengeLink}
-                    onCreate={createChallengeFromRun}
-                    onInitialsChange={setPlayerInitials}
-                    onSubmit={submitCurrentChallengeScore}
-                    playerId={playerId}
-                    shareUrl={challengeShareUrl}
-                  />
-                  )}
-                </div>
+                <ChallengeCreatePanel
+                  actionBusy={challengeActionBusy}
+                  error={challengeError}
+                  initials={playerInitials}
+                  onCreate={createChallengeFromRun}
+                  onInitialsChange={(initials) => {
+                    setPlayerInitials(initials)
+                    setChallengeError('')
+                  }}
+                />
               )}
             </div>
           </div>
@@ -2418,6 +2393,47 @@ function renderWaveText(text: string) {
   ))
 }
 
+type ChallengeCreatePanelProps = {
+  actionBusy: boolean
+  error: string
+  initials: string
+  onCreate: () => void
+  onInitialsChange: (initials: string) => void
+}
+
+function ChallengeCreatePanel({
+  actionBusy,
+  error,
+  initials,
+  onCreate,
+  onInitialsChange,
+}: ChallengeCreatePanelProps) {
+  const normalizedInitials = normalizeInitials(initials)
+  const initialsAllowed = isAllowedInitials(normalizedInitials)
+
+  return (
+    <div className="challenge-panel challenge-create-panel">
+
+      <div className="challenge-create-row">
+        <label className="initials-field challenge-create-initials">
+          <input
+            aria-label="Leaderboard initials"
+            maxLength={3}
+            onChange={(event) => onInitialsChange(cleanInitialsInput(event.target.value))}
+            placeholder={initialsPlaceholder}
+            value={initials}
+          />
+        </label>
+        <FlipButton type="button" disabled={!initialsAllowed || actionBusy} hoverText="Send It" onClick={onCreate}>
+          {actionBusy ? 'Creating' : 'Challenge Your Friends'}
+        </FlipButton>
+      </div>
+
+      {error && <p className="challenge-error">{error}</p>}
+    </div>
+  )
+}
+
 type ChallengePanelProps = {
   actionBusy: boolean
   attemptStatus: ChallengeAttemptStatus
@@ -2427,7 +2443,6 @@ type ChallengePanelProps = {
   initials: string
   isChallengeRun: boolean
   onCopy: () => void
-  onCreate: () => void
   onInitialsChange: (initials: string) => void
   onSubmit: () => void
   playerId: string
@@ -2443,7 +2458,6 @@ function ChallengePanel({
   initials,
   isChallengeRun,
   onCopy,
-  onCreate,
   onInitialsChange,
   onSubmit,
   playerId,
@@ -2452,7 +2466,6 @@ function ChallengePanel({
   const normalizedInitials = normalizeInitials(initials)
   const initialsAllowed = isAllowedInitials(normalizedInitials)
   const canSubmitScore = isChallengeRun && attemptStatus === 'started' && Boolean(error)
-  const canCreateChallenge = !isChallengeRun && !challenge
 
   return (
     <div className="challenge-panel">
@@ -2465,9 +2478,8 @@ function ChallengePanel({
         </strong>
       </div>
 
-      {(canCreateChallenge || canSubmitScore) && (
+      {canSubmitScore && (
         <label className="initials-field">
-          <span>Initials</span>
           <input
             aria-label="Leaderboard initials"
             maxLength={3}
@@ -2481,12 +2493,6 @@ function ChallengePanel({
       {error && <p className="challenge-error">{error}</p>}
       {isChallengeRun && attemptStatus === 'started' && !error && (
         <p className="challenge-status">{actionBusy ? 'Submitting score...' : 'Score pending...'}</p>
-      )}
-
-      {canCreateChallenge && (
-        <FlipButton type="button" disabled={!initialsAllowed || actionBusy} hoverText="Send It" onClick={onCreate}>
-          {actionBusy ? 'Creating' : 'Create Challenge'}
-        </FlipButton>
       )}
 
       {canSubmitScore && (

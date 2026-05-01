@@ -247,7 +247,6 @@ canvas {
   inset: 0;
   z-index: 3;
   display: grid;
-  gap: 14px;
   place-content: center;
   place-items: center;
   pointer-events: none;
@@ -256,26 +255,22 @@ canvas {
 
 .final-score-menu .score-panel {
   display: grid;
-  gap: 10px;
-  min-width: min(320px, calc(100vw - 48px));
-  max-width: min(420px, calc(100vw - 48px));
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 8px;
-  padding: 18px;
-  background: var(--panel);
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
   pointer-events: auto;
   cursor: default;
 }
 
 .final-score-note {
-  max-width: min(420px, calc(100vw - 48px));
-  margin: -4px 0 0;
+  width: 100%;
+  margin: 0;
   border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: 8px;
-  padding: 9px 12px;
+  padding: 8px 10px;
   color: var(--text);
-  background: var(--panel-soft);
-  backdrop-filter: blur(14px);
+  background: rgba(148, 163, 184, 0.08);
   font-size: 0.92rem;
   font-weight: 750;
   line-height: 1.25;
@@ -283,8 +278,15 @@ canvas {
 
 .draggable-final-score {
   display: grid;
-  gap: 14px;
-  place-items: center;
+  gap: 12px;
+  place-items: stretch;
+  width: min(450px, calc(100vw - 44px));
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 12px;
+  padding: 16px;
+  color: var(--text);
+  background: var(--panel);
+  box-shadow: 0 24px 72px rgba(0, 0, 0, 0.32);
   pointer-events: auto;
   touch-action: none;
 }
@@ -295,8 +297,8 @@ canvas {
     "score board"
     "note board"
     "actions board";
-  align-items: center;
-  width: min(760px, calc(100vw - 44px));
+  align-items: start;
+  width: min(780px, calc(100vw - 44px));
 }
 
 .social-results > .score-panel {
@@ -323,6 +325,26 @@ canvas {
   justify-self: stretch;
 }
 
+.draggable-final-score > .challenge-panel {
+  width: 100%;
+  max-width: none;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.draggable-final-score:not(.social-results) > .challenge-create-panel {
+  width: min(360px, 100%);
+  justify-self: center;
+}
+
+.draggable-final-score > .score-actions {
+  width: 100%;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  padding-top: 2px;
+}
+
 .draggable-final-score .score-panel {
   cursor: grab;
 }
@@ -341,19 +363,6 @@ canvas {
   gap: 10px;
   justify-content: center;
   pointer-events: auto;
-}
-
-.challenge-dropdown {
-  display: grid;
-  gap: 10px;
-  justify-items: center;
-  width: min(420px, calc(100vw - 48px));
-  pointer-events: auto;
-}
-
-.challenge-dropdown-toggle {
-  width: 100%;
-  max-width: 260px;
 }
 
 .tutorial-tip {
@@ -689,6 +698,26 @@ canvas {
   text-align: left;
 }
 
+.challenge-create-panel {
+  gap: 8px;
+  width: min(360px, calc(100vw - 48px));
+  padding: 12px;
+}
+
+.challenge-create-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 8px;
+  align-items: stretch;
+}
+
+.challenge-create-row .flip-button {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 12px;
+  font-size: 0.82rem;
+}
+
 .initials-field {
   display: grid;
   grid-template-columns: 1fr 84px;
@@ -712,6 +741,18 @@ canvas {
   font-size: 1rem;
   text-align: center;
   text-transform: uppercase;
+}
+
+.initials-field.challenge-create-initials {
+  grid-template-columns: 1fr;
+  gap: 4px;
+  font-size: 0.68rem;
+}
+
+.initials-field.challenge-create-initials input {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 0.92rem;
 }
 
 .challenge-error {
@@ -1210,11 +1251,15 @@ button.compact {
     padding: 3px 4px;
   }
 
+  .draggable-final-score {
+    width: min(320px, calc(100vw - 34px));
+    gap: 9px;
+    border-radius: 10px;
+    padding: 11px;
+  }
+
   .final-score-menu .score-panel {
-    min-width: min(260px, calc(100vw - 40px));
-    max-width: min(300px, calc(100vw - 40px));
     gap: 6px;
-    padding: 12px;
   }
 
   .final-score-menu .score-panel strong {
@@ -1222,7 +1267,6 @@ button.compact {
   }
 
   .final-score-note {
-    max-width: min(300px, calc(100vw - 40px));
     padding: 7px 9px;
     font-size: 0.68rem;
   }
@@ -1238,7 +1282,6 @@ button.compact {
       "board"
       "note"
       "actions";
-    width: min(320px, calc(100vw - 34px));
   }
 
   .social-results > .challenge-panel {
@@ -1247,17 +1290,20 @@ button.compact {
 
   .score-actions button,
   .skip-replay-button,
-  .challenge-dropdown-toggle {
+  .challenge-create-row .flip-button {
     padding: 7px 10px;
     font-size: 0.75rem;
   }
 
   .ready-panel,
-  .challenge-panel,
-  .challenge-dropdown {
+  .challenge-panel {
     width: min(300px, calc(100vw - 40px));
     padding: 10px;
     font-size: 0.76rem;
+  }
+
+  .challenge-create-row {
+    grid-template-columns: 1fr;
   }
 
   .start-card {
