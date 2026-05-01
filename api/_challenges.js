@@ -20,7 +20,7 @@ export function validateScorePayload(body) {
   const maxScore = Number(body.maxScore)
   const playerId = String(body.playerId ?? '').slice(0, 128)
 
-  if (!initials || !playerId || !Number.isFinite(score) || !Number.isFinite(maxScore)) {
+  if (initials.length !== 3 || !playerId || !Number.isFinite(score) || !Number.isFinite(maxScore)) {
     return null
   }
 

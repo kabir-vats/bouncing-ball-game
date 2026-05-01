@@ -7,6 +7,7 @@ import {
   getChallengeUrl,
   submitChallengeScore,
 } from './challenges'
+import { type DailyRecord, getDaily, getDailyDateKey, submitDailyScore } from './dailies'
 import {
   type Bounce,
   type GameScene,
@@ -77,9 +78,10 @@ type DragState = {
 type BoardState = {
   scene: GameScene
   seed: number
-  source: 'challenge' | 'random' | 'url'
+  source: 'challenge' | 'daily' | 'random' | 'url'
 }
 type ChallengeAttemptStatus = 'fresh' | 'started' | 'submitted'
+type DailyAttemptStatus = ChallengeAttemptStatus
 type TutorialTipKey = 'firstPrediction' | 'firstScore' | 'longPath' | 'firstMiss' | 'finishedRun'
 type TutorialTip = {
   key: TutorialTipKey
@@ -102,6 +104,8 @@ const localHighScoreKey = 'bounce-call.local-best'
 const playerIdKey = 'bounce-call.player-id'
 const playerInitialsKey = 'bounce-call.player-initials'
 const challengeAttemptPrefix = 'bounce-call.challenge-attempt.'
+const dailyAttemptPrefix = 'bounce-call.daily-attempt.'
+const dailyStreakKey = 'bounce-call.daily-streak'
 const tutorialStoragePrefix = 'bounce-call.tutorial.'
 const seedQueryParam = 'seed'
 const challengeQueryParam = 'challenge'
@@ -146,6 +150,7 @@ function App() {
   const runBestBeforeRef = useRef(0)
   const recordedFinishedScoreRef = useRef<string | null>(null)
   const autoSubmittedChallengeRef = useRef<string | null>(null)
+  const autoSubmittedDailyRef = useRef<string | null>(null)
   const [board, setBoard] = useState<BoardState>(() => createInitialBoard())
   const currentScene = board.scene
   const [phase, setPhase] = useState<Phase>('ready')
@@ -179,6 +184,13 @@ function App() {
   const [challengeAttemptStatus, setChallengeAttemptStatus] = useState<ChallengeAttemptStatus>(() =>
     getChallengeSlugFromAddress() ? readChallengeAttemptStatus(getChallengeSlugFromAddress() ?? '') : 'fresh',
   )
+  const [daily, setDaily] = useState<DailyRecord | null>(null)
+  const [activeDailyDate, setActiveDailyDate] = useState<string | null>(null)
+  const [dailyLoading, setDailyLoading] = useState(false)
+  const [dailyError, setDailyError] = useState('')
+  const [dailyActionBusy, setDailyActionBusy] = useState(false)
+  const [dailyAttemptStatus, setDailyAttemptStatus] = useState<DailyAttemptStatus>('fresh')
+  const [dailyStreak, setDailyStreak] = useState(() => readDailyStreak())
 
   const simulation = useMemo(() => simulateTrajectory(currentScene, finalLoopDuration), [currentScene])
   const trailSegments = useMemo(() => getTrailSegments(simulation.samples), [simulation.samples])
@@ -232,6 +244,7 @@ function App() {
     lastSoundTimeRef.current = 0
     recordedFinishedScoreRef.current = null
     autoSubmittedChallengeRef.current = null
+    autoSubmittedDailyRef.current = null
     setBoard({
       scene: generateRandomScene(defaultGeneratorConfig, endlessGenerationBounces, nextSeed),
       seed: nextSeed,
@@ -253,6 +266,11 @@ function App() {
     setChallengeCopied(false)
     setChallengePanelOpen(false)
     setChallengeAttemptStatus('fresh')
+    setDaily(null)
+    setActiveDailyDate(null)
+    setDailyError('')
+    setDailyActionBusy(false)
+    setDailyAttemptStatus('fresh')
     setPhase('ready')
     clearSeedFromAddress()
     clearChallengeFromAddress()
@@ -350,10 +368,29 @@ function App() {
       setChallengeAttemptStatus('started')
     }
 
+    if (activeDailyDate) {
+      const initials = normalizeInitials(playerInitials)
+      if (!isAllowedInitials(initials)) {
+        setDailyError(getInitialsError(initials))
+        return
+      }
+
+      if (dailyAttemptStatus !== 'fresh') {
+        return
+      }
+
+      writePlayerInitials(initials)
+      setPlayerInitials(initials)
+      setDailyError('')
+      writeDailyAttemptStatus(activeDailyDate, 'started')
+      setDailyAttemptStatus('started')
+    }
+
     enableAudio()
     runBestBeforeRef.current = localHighScore
     recordedFinishedScoreRef.current = null
     autoSubmittedChallengeRef.current = null
+    autoSubmittedDailyRef.current = null
     activeGuessRef.current = null
     finishedLoopAbsoluteTimeRef.current = 0
     lastSoundBounceRef.current = -1
@@ -375,6 +412,8 @@ function App() {
   }, [
     activeChallengeSlug,
     challengeAttemptStatus,
+    activeDailyDate,
+    dailyAttemptStatus,
     enableAudio,
     localHighScore,
     openingBounceIndex,
@@ -418,6 +457,20 @@ function App() {
       setChallengeActionBusy(false)
     })
   }, [board.seed, maxScore, playerId, playerInitials, totalScore, turnResults])
+
+  const openDailyChallenge = useCallback(() => {
+    const date = getDailyDateKey()
+    setActiveChallengeSlug(null)
+    setChallenge(null)
+    setChallengeError('')
+    setChallengePanelOpen(false)
+    setChallengeAttemptStatus('fresh')
+    setActiveDailyDate(date)
+    setDailyLoading(true)
+    setDailyError('')
+    clearChallengeFromAddress()
+    clearSeedFromAddress()
+  }, [])
 
   const submitCurrentChallengeScore = useCallback(() => {
     if (!activeChallengeSlug) {
@@ -464,6 +517,44 @@ function App() {
     totalScore,
     turnResults,
   ])
+
+  const submitCurrentDailyScore = useCallback(() => {
+    if (!activeDailyDate) {
+      return
+    }
+
+    if (dailyActionBusy || dailyAttemptStatus === 'submitted') {
+      return
+    }
+
+    const initials = normalizeInitials(playerInitials)
+    if (!isAllowedInitials(initials)) {
+      setDailyError(getInitialsError(initials))
+      return
+    }
+
+    setDailyActionBusy(true)
+    setDailyError('')
+    writePlayerInitials(initials)
+    setPlayerInitials(initials)
+
+    void submitDailyScore(activeDailyDate, {
+      initials,
+      maxScore,
+      playerId,
+      score: totalScore,
+      turns: serializeTurns(turnResults),
+    }).then((nextDaily) => {
+      setDaily(nextDaily)
+      writeDailyAttemptStatus(activeDailyDate, 'submitted')
+      setDailyAttemptStatus('submitted')
+      setDailyStreak(updateDailyStreak(activeDailyDate))
+      setDailyActionBusy(false)
+    }).catch((error: unknown) => {
+      setDailyError(error instanceof Error ? error.message : 'Could not submit daily score.')
+      setDailyActionBusy(false)
+    })
+  }, [activeDailyDate, dailyActionBusy, dailyAttemptStatus, maxScore, playerId, playerInitials, totalScore, turnResults])
 
   const copyChallengeLink = useCallback(() => {
     if (!challenge) {
@@ -794,6 +885,70 @@ function App() {
   }, [activeChallengeSlug, challenge?.slug])
 
   useEffect(() => {
+    if (!activeDailyDate) {
+      const timeout = window.setTimeout(() => {
+        setDaily(null)
+        setDailyLoading(false)
+        setDailyError('')
+        setDailyAttemptStatus('fresh')
+      }, 0)
+      return () => window.clearTimeout(timeout)
+    }
+
+    if (daily?.date === activeDailyDate) {
+      const timeout = window.setTimeout(() => {
+        setDailyLoading(false)
+        setDailyAttemptStatus(readDailyAttemptStatus(activeDailyDate))
+      }, 0)
+      return () => window.clearTimeout(timeout)
+    }
+
+    let cancelled = false
+    const loadingTimeout = window.setTimeout(() => {
+      setDailyLoading(true)
+      setDailyError('')
+    }, 0)
+
+    void getDaily(activeDailyDate).then((loadedDaily) => {
+      if (cancelled) {
+        return
+      }
+
+      setDaily(loadedDaily)
+      setBoard({
+        scene: generateRandomScene(defaultGeneratorConfig, endlessGenerationBounces, loadedDaily.seed),
+        seed: loadedDaily.seed,
+        source: 'daily',
+      })
+      setActiveGuess(null)
+      setTurnIndex(0)
+      setTurnResults([])
+      setHighlightedBounce(null)
+      setTimerRemaining(endlessStartSeconds)
+      setPauseBounceIndex(0)
+      setStepTime(0)
+      setFinalTrailTime(0)
+      setFinalScoreOffset({ x: 0, y: 0 })
+      setFinalMessage('')
+      setDailyAttemptStatus(readDailyAttemptStatus(activeDailyDate))
+      setDailyLoading(false)
+      setPhase('ready')
+    }).catch((error: unknown) => {
+      if (cancelled) {
+        return
+      }
+
+      setDailyError(error instanceof Error ? error.message : 'Daily challenge not found.')
+      setDailyLoading(false)
+    })
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(loadingTimeout)
+    }
+  }, [activeDailyDate, daily?.date])
+
+  useEffect(() => {
     if (!activeTip) {
       return
     }
@@ -883,6 +1038,20 @@ function App() {
   }, [activeChallengeSlug, challengeAttemptStatus, phase, submitCurrentChallengeScore, totalScore, turnResults.length])
 
   useEffect(() => {
+    if (phase !== 'finished' || !activeDailyDate || dailyAttemptStatus !== 'started') {
+      return
+    }
+
+    const runKey = `${activeDailyDate}:${turnResults.length}:${totalScore}`
+    if (autoSubmittedDailyRef.current === runKey) {
+      return
+    }
+
+    autoSubmittedDailyRef.current = runKey
+    submitCurrentDailyScore()
+  }, [activeDailyDate, dailyAttemptStatus, phase, submitCurrentDailyScore, totalScore, turnResults.length])
+
+  useEffect(() => {
     const canvas = canvasRef.current
     const context = canvas?.getContext('2d')
 
@@ -944,6 +1113,7 @@ function App() {
         <div className="status-strip" aria-live="polite">
           <span>{getPhaseLabel(phase)}</span>
           {board.source === 'challenge' && <span>challenge</span>}
+          {board.source === 'daily' && <span>daily</span>}
           {board.source === 'url' && <span>linked board</span>}
           <strong>Best {localHighScore}</strong>
           <strong>
@@ -965,7 +1135,53 @@ function App() {
 
         {phase === 'ready' && (
           <div className="play-overlay">
-            {challengeLoading ? (
+            {dailyLoading ? (
+              <div className="ready-panel">
+                <p className="eyebrow">daily challenge</p>
+                <strong>Loading board</strong>
+              </div>
+            ) : dailyError && !activeDailyDate ? (
+              <div className="ready-panel">
+                <p className="eyebrow">daily challenge</p>
+                <strong>{dailyError}</strong>
+                <button type="button" onClick={startNewRound}>
+                  New Game
+                </button>
+              </div>
+            ) : activeDailyDate && dailyAttemptStatus !== 'fresh' ? (
+              <div className="ready-panel">
+                <p className="eyebrow">daily challenge</p>
+                <strong>{formatDailyTitle(activeDailyDate)}</strong>
+                <DailyMeta streak={dailyStreak} playedToday />
+                {daily && <DailyLeaderboard daily={daily} playerId={playerId} />}
+                <div className="score-actions">
+                  <button type="button" className="secondary" onClick={startNewRound}>
+                    New Game
+                  </button>
+                </div>
+              </div>
+            ) : activeDailyDate && daily ? (
+              <div className="ready-panel challenge-lobby">
+                <p className="eyebrow">daily challenge</p>
+                <strong>{formatDailyTitle(activeDailyDate)}</strong>
+                <DailyMeta streak={dailyStreak} playedToday={dailyAttemptStatus === 'submitted'} />
+                <label className="initials-field">
+                  <span>Initials</span>
+                  <input
+                    aria-label="Leaderboard initials"
+                    maxLength={3}
+                    onChange={(event) => setPlayerInitials(cleanInitialsInput(event.target.value))}
+                    placeholder={initialsPlaceholder}
+                    value={playerInitials}
+                  />
+                </label>
+                {dailyError && <p className="challenge-error">{dailyError}</p>}
+                <DailyLeaderboard daily={daily} playerId={playerId} />
+                <button type="button" disabled={!isAllowedInitials(playerInitials)} onClick={startGame}>
+                  Play Daily
+                </button>
+              </div>
+            ) : challengeLoading ? (
               <div className="ready-panel">
                 <p className="eyebrow">challenge</p>
                 <strong>Loading board</strong>
@@ -1013,9 +1229,22 @@ function App() {
                 </button>
               </div>
             ) : (
-              <button type="button" onClick={startGame}>
-                Play
-              </button>
+              <div className="start-panel">
+                <p>Click where the ball will bounce next</p>
+                <div className="start-actions">
+                  <button type="button" onClick={startGame}>
+                    Play
+                  </button>
+                  <button
+                    type="button"
+                    className="daily-button secondary"
+                    aria-label="Daily challenge"
+                    onClick={openDailyChallenge}
+                  >
+                    📅
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         )}
@@ -1067,7 +1296,15 @@ function App() {
                   Watch Replay
                 </button>
               </div>
-              {activeChallengeSlug ? (
+              {activeDailyDate ? (
+                <DailyPanel
+                  actionBusy={dailyActionBusy}
+                  daily={daily}
+                  error={dailyError}
+                  playerId={playerId}
+                  streak={dailyStreak}
+                />
+              ) : activeChallengeSlug ? (
                 <ChallengePanel
                   actionBusy={challengeActionBusy}
                   attemptStatus={challengeAttemptStatus}
@@ -1308,6 +1545,57 @@ function writeChallengeAttemptStatus(slug: string, status: ChallengeAttemptStatu
   }
 }
 
+function readDailyAttemptStatus(date: string): DailyAttemptStatus {
+  try {
+    const value = window.localStorage.getItem(`${dailyAttemptPrefix}${date}`)
+    return value === 'started' || value === 'submitted' ? value : 'fresh'
+  } catch {
+    return 'fresh'
+  }
+}
+
+function writeDailyAttemptStatus(date: string, status: DailyAttemptStatus) {
+  try {
+    window.localStorage.setItem(`${dailyAttemptPrefix}${date}`, status)
+  } catch {
+    // One-browser attempt limits are best-effort without sign-in.
+  }
+}
+
+function readDailyStreak() {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(dailyStreakKey) ?? '{}') as {
+      count?: number
+      lastDate?: string
+    }
+    return Number.isFinite(stored.count) ? Math.max(0, stored.count ?? 0) : 0
+  } catch {
+    return 0
+  }
+}
+
+function updateDailyStreak(date: string) {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(dailyStreakKey) ?? '{}') as {
+      count?: number
+      lastDate?: string
+    }
+
+    if (stored.lastDate === date) {
+      return Math.max(1, stored.count ?? 1)
+    }
+
+    const previousDate = new Date(`${date}T00:00:00.000Z`)
+    previousDate.setUTCDate(previousDate.getUTCDate() - 1)
+    const expectedPrevious = previousDate.toISOString().slice(0, 10)
+    const count = stored.lastDate === expectedPrevious ? Math.max(0, stored.count ?? 0) + 1 : 1
+    window.localStorage.setItem(dailyStreakKey, JSON.stringify({ count, lastDate: date }))
+    return count
+  } catch {
+    return 1
+  }
+}
+
 function cleanInitialsInput(input: string) {
   return normalizeInitials(input)
 }
@@ -1327,6 +1615,15 @@ function getInitialsError(initials: string) {
   }
 
   return 'Try different initials.'
+}
+
+function formatDailyTitle(date: string) {
+  const parsed = new Date(`${date}T00:00:00.000Z`)
+  return `Daily Challenge ${parsed.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  })}`
 }
 
 function serializeTurns(results: TurnResult[]) {
@@ -2091,11 +2388,51 @@ function ChallengePanel({
 }
 
 function ChallengeLeaderboard({ challenge, playerId }: { challenge: ChallengeRecord; playerId: string }) {
+  return <ScoreLeaderboard entries={challenge.leaderboard} playerId={playerId} />
+}
+
+type DailyPanelProps = {
+  actionBusy: boolean
+  daily: DailyRecord | null
+  error: string
+  playerId: string
+  streak: number
+}
+
+function DailyPanel({ actionBusy, daily, error, playerId, streak }: DailyPanelProps) {
+  return (
+    <div className="challenge-panel">
+      <div className="challenge-panel-heading">
+        <p className="eyebrow">daily challenge</p>
+        <strong>{daily ? formatDailyTitle(daily.date) : 'Daily Challenge'}</strong>
+      </div>
+      <DailyMeta streak={streak} playedToday />
+      {error && <p className="challenge-error">{error}</p>}
+      {actionBusy && <p className="challenge-status">Submitting score...</p>}
+      {daily && <DailyLeaderboard daily={daily} playerId={playerId} />}
+    </div>
+  )
+}
+
+function DailyMeta({ playedToday, streak }: { playedToday: boolean; streak: number }) {
+  return (
+    <div className="daily-meta">
+      <span>{playedToday ? 'Played today' : 'Not played yet'}</span>
+      <span>Streak {streak}</span>
+    </div>
+  )
+}
+
+function DailyLeaderboard({ daily, playerId }: { daily: DailyRecord; playerId: string }) {
+  return <ScoreLeaderboard entries={daily.leaderboard} playerId={playerId} />
+}
+
+function ScoreLeaderboard({ entries, playerId }: { entries: ChallengeRecord['leaderboard']; playerId: string }) {
   return (
     <div className="challenge-leaderboard-wrap">
       <p className="challenge-leaderboard-title">Leaderboard:</p>
       <div className="challenge-leaderboard">
-        {challenge.leaderboard.slice(0, 8).map((entry, index) => (
+        {entries.slice(0, 8).map((entry, index) => (
           <span
             className={`challenge-entry ${isPlayerEntry(entry, playerId) ? 'is-player' : ''}`}
             key={entry.id}
