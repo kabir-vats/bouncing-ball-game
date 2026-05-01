@@ -1,6 +1,5 @@
 import { cleanDate, fetchDaily } from '../_dailies.js'
 import { html, requireMethod } from '../_http.js'
-import { formatDailyCardDate } from '../_share_cards.js'
 
 export default async function handler(req, res) {
   if (!requireMethod(req, res, 'GET')) {
@@ -10,17 +9,17 @@ export default async function handler(req, res) {
   const date = cleanDate(req.query.date)
   const origin = getOrigin(req)
   const playUrl = `${origin}/?daily=${encodeURIComponent(date)}`
-  const imageUrl = `${origin}/api/og/daily/${encodeURIComponent(date)}`
+  const imageUrl = `${origin}/share/ball-knowledge-share.png`
   const dateLabel = formatDailyCardDate(date)
   let title = `Ball Knowledge Daily ${dateLabel}`
-  let description = 'One daily board, three lives, and one official attempt.'
+  let description = 'Test your ball knowledge. Guess where the ball will bounce next and challenge your friends. Free at ball-knowledge.kabibi.io.'
 
   try {
     const daily = await fetchDaily(date)
     const leader = daily.leaderboard[0]
     if (leader) {
-      title = `Beat ${leader.initials} on the ${dateLabel} Daily`
-      description = `${leader.initials} is leading with ${leader.score}. Can you predict the next bounce better?`
+      title = `Surpass ${leader.initials}'s daily ball knowledge score`
+      description = `Test your ball knowledge by guessing where the ball will bounce next. ${leader.initials} is leading with ${leader.score}. Can you predict the next bounce better?`
     }
   } catch {
     // Keep the share page useful before the database is configured.
@@ -38,8 +37,10 @@ export default async function handler(req, res) {
     <meta property="og:type" content="website" />
     <meta property="og:url" content="${origin}/d/${escapeHtml(date)}" />
     <meta property="og:image" content="${imageUrl}" />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
+    <meta property="og:image:secure_url" content="${imageUrl}" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1731" />
+    <meta property="og:image:height" content="909" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="${imageUrl}" />
     <meta http-equiv="refresh" content="0; url=${playUrl}" />
@@ -65,4 +66,17 @@ function escapeHtml(value) {
     '"': '&quot;',
     "'": '&#39;',
   })[char])
+}
+
+function formatDailyCardDate(date) {
+  const parsed = new Date(`${date}T00:00:00.000Z`)
+  if (Number.isNaN(parsed.getTime())) {
+    return 'Today'
+  }
+
+  return parsed.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  })
 }

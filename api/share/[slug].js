@@ -9,14 +9,14 @@ export default async function handler(req, res) {
   const slug = cleanSlug(req.query.slug)
   const origin = getOrigin(req)
   const playUrl = `${origin}/?challenge=${encodeURIComponent(slug)}`
-  const imageUrl = `${origin}/api/og/challenge/${encodeURIComponent(slug)}`
-  let title = 'Beat this board and check your Ball Knowledge'
-  let description = 'One board, three lives, and one official attempt.'
+  const imageUrl = `${origin}/share/ball-knowledge-share.png`
+  let title = 'Test your ball knowledge'
+  let description = 'Test your ball knowledge. Guess where the ball will bounce next and challenge your friends. Free at ball-knowledge.kabibi.io.'
 
   try {
     const challenge = await fetchChallenge(slug)
-    title = `Surpass ${challenge.creatorInitials}'s score`
-    description = `${challenge.creatorInitials} scored ${challenge.creatorScore}. Is your ball knowledge more elite?`
+    title = `Surpass ${challenge.creatorInitials}'s ball knowledge score`
+    description = `Test your ball knowledge by guessing where the ball will bounce next. ${challenge.creatorInitials} is leading with ${challenge.creatorScore}. Can you predict the next bounce better?`
   } catch {
     // Keep the share page useful before the database is configured.
   }
@@ -33,8 +33,10 @@ export default async function handler(req, res) {
     <meta property="og:type" content="website" />
     <meta property="og:url" content="${origin}/c/${escapeHtml(slug)}" />
     <meta property="og:image" content="${imageUrl}" />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
+    <meta property="og:image:secure_url" content="${imageUrl}" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1731" />
+    <meta property="og:image:height" content="909" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="${imageUrl}" />
     <meta http-equiv="refresh" content="0; url=${playUrl}" />
