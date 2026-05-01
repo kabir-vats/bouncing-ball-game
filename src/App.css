@@ -1,8 +1,10 @@
 .app-shell {
+  --mobile-top-clearance: max(44px, calc(env(safe-area-inset-top, 0px) + 14px));
   display: grid;
   place-items: center;
   width: 100vw;
   height: 100svh;
+  min-height: 100dvh;
   overflow: hidden;
   padding: 0;
 }
@@ -1135,9 +1137,15 @@ button.compact {
 }
 
 @media (max-width: 900px) and (orientation: portrait) {
+  .app-shell {
+    align-items: start;
+    height: 100dvh;
+    padding: var(--mobile-top-clearance) 8px 8px;
+  }
+
   .game-stage {
-    width: min(calc(100vw - 16px), calc((100svh - 16px) * 0.625));
-    height: min(calc(100svh - 16px), calc((100vw - 16px) / 0.625));
+    width: min(calc(100vw - 16px), calc((100dvh - var(--mobile-top-clearance) - 8px) * 0.625));
+    height: min(calc(100dvh - var(--mobile-top-clearance) - 8px), calc((100vw - 16px) / 0.625));
   }
 
   .canvas-wrap {
