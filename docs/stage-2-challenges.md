@@ -68,6 +68,7 @@ notify pgrst, 'reload schema';
 - The API also prevents duplicate scores per `player_id` per challenge.
 - No sign-in is required, so determined users can replay in a different browser or clear storage.
 - The API recomputes leaderboard scores server-side from the seed and submitted guesses, stores the computed score, and logs any mismatch with the browser's local score.
+- Challenge creation is rate-limited to 10 requests per IP per minute, and challenge score submission is rate-limited to 30 requests per IP per minute. Run `docs/rate-limits.sql` in Supabase before relying on production limits.
 - If your database already has the older exactly-3-character initials checks, run `docs/initials-1-to-3-migration.sql` in Supabase.
 
 ## Share URL Flow

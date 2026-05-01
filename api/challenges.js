@@ -1,9 +1,14 @@
 import { fetchChallenge, createSlug, verifyScorePayload } from './_challenges.js'
 import { json, readJson, requireMethod } from './_http.js'
+import { applyRateLimit } from './_rate_limit.js'
 import { supabase } from './_supabase.js'
 
 export default async function handler(req, res) {
   if (!requireMethod(req, res, 'POST')) {
+    return
+  }
+
+  if (!(await applyRateLimit(req, res, { bucket: 'create-challenge', limit: 10, windowSeconds: 60 }))) {
     return
   }
 

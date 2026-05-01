@@ -50,5 +50,6 @@ Notes:
 - One official attempt per browser is stored in localStorage.
 - Supabase also rejects duplicate daily scores per `player_id` through the unique constraint.
 - The API recomputes submitted daily scores from the daily seed and submitted guesses before storing leaderboard entries.
+- Daily score submission is rate-limited to 20 requests per IP per minute. Run `docs/rate-limits.sql` in Supabase before relying on production limits.
 - If your database already has the older exactly-3-character initials check, run `docs/initials-1-to-3-migration.sql` in Supabase.
 - Streak count and “played today” are local browser state for now.

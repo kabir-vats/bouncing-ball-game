@@ -2760,9 +2760,10 @@ function getTurnSeconds(turnIndex: number) {
 
 function getTimerDecayStep(seconds: number) {
   if (seconds > 4) return 0.5
-  if (seconds > 3) return 0.25
-  if (seconds > 2) return 0.125
-  if (seconds > 1) return 0.0625
+  if (seconds > 3.5) return 0.25
+  if (seconds > 3) return 0.1
+  if (seconds > 2) return 0.05
+  if (seconds > 1) return 0.03
   return 0
 }
 
