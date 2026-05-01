@@ -440,13 +440,10 @@ canvas {
   stroke: rgba(15, 23, 42, 0.36);
 }
 
-.ball-knowledge-icon .bounce-ball {
-  fill: #f8fafc;
-  filter: drop-shadow(0 0 13px rgba(248, 250, 252, 0.46));
-}
 
-.theme-sky .ball-knowledge-icon .bounce-ball {
-  fill: #0f172a;
+
+.ball-knowledge-icon .bounce-ball {
+  fill: var(--accent);
   filter: drop-shadow(0 0 10px rgba(15, 23, 42, 0.22));
 }
 
