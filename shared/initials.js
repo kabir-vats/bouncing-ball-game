@@ -5,7 +5,20 @@ const blockedInitials = new Set([
   'NZI',
   'SEX',
   'TIT',
-  'XXX',
+  'NIG',
+  'NGR',
+  'FUK',
+  'FAG',
+  'KYS',
+  'HOE',
+  'H0E',
+  'F4G',
+  'N1G',
+  'S3X',
+  '4SS',
+  'FK',
+  'COK',
+  'DIK'
 ])
 
 const blockedInitialPatterns = [

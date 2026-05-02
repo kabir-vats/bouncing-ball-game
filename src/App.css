@@ -857,7 +857,7 @@ canvas {
 
 .challenge-entry {
   display: grid;
-  grid-template-columns: 28px 1fr auto;
+  grid-template-columns: 28px minmax(3ch, 1fr) minmax(7ch, auto);
   gap: 8px;
   align-items: center;
   border-radius: 6px;
@@ -870,6 +870,19 @@ canvas {
 
 .challenge-entry > strong {
   color: var(--accent);
+  text-align: right;
+}
+
+.challenge-entry span:nth-child(2) {
+  min-width: 0;
+  text-align: left;
+}
+
+.challenge-entry span:nth-child(3) {
+  justify-self: end;
+  min-width: 7ch;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .challenge-entry.is-player {
