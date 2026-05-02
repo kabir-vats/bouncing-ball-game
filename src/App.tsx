@@ -230,7 +230,7 @@ function App() {
   const revealedTime = getVisibleTime(phase, stepTime, pauseTime, finalPredictionTarget?.time)
   const rippleAge =
     phase === 'end-ripple' && finalPredictionTarget ? Math.max(0, stepTime - finalPredictionTarget.time) : null
-  const visibleGuesses = getEndlessGuesses(turnResults, activeGuess, phase, revealedTime)
+  const visibleGuesses = getEndlessGuesses(turnResults, activeGuess, phase, revealedTime, simulation.bounces)
   const visibleTargets = getEndlessTargets(turnResults, phase, revealedTime)
   const timerProgress = phase === 'guessing' ? Math.max(0, Math.min(1, timerRemaining / currentTurnSeconds)) : null
   const challengeShareUrl = challenge ? getChallengeUrl(challenge.slug) : ''
@@ -2709,13 +2709,19 @@ function getEndlessGuesses(
   activeGuess: Point | null,
   phase: Phase,
   visibleTime: number,
+  bounces: Bounce[],
 ): LabeledPoint[] {
   const resultGuesses = results.flatMap((result, index) => {
     if (!result.guess) {
       return []
     }
 
-    const revealed = phase === 'score-replay' || phase === 'finished' || result.target.time <= visibleTime
+    const guessRevealTime = phase === 'score-replay' ? getReplayGuessRevealTime(result.target, bounces) : 0
+    if (phase === 'score-replay' && visibleTime < guessRevealTime) {
+      return []
+    }
+
+    const revealed = phase === 'finished' || result.target.time <= visibleTime
     return [
       {
         ...result.guess,
@@ -2729,6 +2735,15 @@ function getEndlessGuesses(
     return resultGuesses
   }
   return activeGuess ? [...resultGuesses, { ...activeGuess, label: results.length + 1, tone: 'tentative' }] : resultGuesses
+}
+
+function getReplayGuessRevealTime(target: Bounce, bounces: Bounce[]) {
+  const targetIndex = bounces.findIndex((bounce) => Math.abs(bounce.time - target.time) < 0.0001)
+  if (targetIndex <= 0) {
+    return 0
+  }
+
+  return bounces[targetIndex - 1].time
 }
 
 function getEndlessTargets(results: TurnResult[], phase: Phase, visibleTime: number) {
