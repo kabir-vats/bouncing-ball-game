@@ -2571,7 +2571,7 @@ function ScoreLeaderboard({ entries, playerId }: { entries: ChallengeRecord['lea
     <div className="challenge-leaderboard-wrap">
       <p className="challenge-leaderboard-title">Leaderboard:</p>
       <div className="challenge-leaderboard">
-        {entries.slice(0, 8).map((entry, index) => (
+        {entries.slice(0, 100).map((entry, index) => (
           <span
             className={`challenge-entry ${isPlayerEntry(entry, playerId) ? 'is-player' : ''}`}
             key={entry.id}
