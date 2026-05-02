@@ -1343,7 +1343,7 @@ function App() {
               />
               {finalMessage && <p className="final-score-note">{finalMessage}</p>}
               <div className="score-actions">
-                <FlipButton type="button" className="wave-text" hoverText="Fresh Board" onClick={startNewRound}>
+                <FlipButton type="button" hoverText="Fresh Board" onClick={startNewRound}>
                   New Game
                 </FlipButton>
                 <FlipButton
