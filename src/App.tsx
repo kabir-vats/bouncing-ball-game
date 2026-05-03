@@ -33,6 +33,7 @@ import {
 } from './game'
 
 type Phase =
+  | 'countdown'
   | 'guessing'
   | 'ready'
   | 'opening'
@@ -52,7 +53,7 @@ type LabeledPoint = Point & {
 type LabeledBounce = Bounce & {
   label?: number
 }
-type GuessTone = 'tentative'
+type GuessTone = 'tentative' | 'hit' | 'miss'
 type Theme = 'sky' | 'night'
 type TrailSegment = {
   from: Point
@@ -86,13 +87,23 @@ type BoardState = {
 }
 type ChallengeAttemptStatus = 'fresh' | 'started' | 'submitted'
 type DailyAttemptStatus = ChallengeAttemptStatus
-type TutorialTipKey = 'firstPrediction' | 'firstScore' | 'longPath' | 'firstMiss' | 'finishedRun'
-type TutorialTip = {
-  key: TutorialTipKey
+type BallDialogueSide = 'above' | 'below' | 'left' | 'right'
+type BallDialogue = {
   text: string
+  side: BallDialogueSide
+  xPercent: number
+  yPercent: number
+}
+type ScoreSplash = {
+  id: number
+  text: string
+  tone: 'score' | 'miss'
+  xPercent: number
+  yPercent: number
 }
 
 const rippleSettleDuration = 2.45
+const countdownTotalTicks = 300
 const endlessStartSeconds = 5
 const endlessMinimumSeconds = 1
 const endlessGenerationBounces = 18
@@ -103,7 +114,7 @@ const playerInitialsKey = 'bounce-call.player-initials'
 const challengeAttemptPrefix = 'bounce-call.challenge-attempt.'
 const dailyAttemptPrefix = 'bounce-call.daily-attempt.'
 const dailyStreakKey = 'bounce-call.daily-streak'
-const tutorialStoragePrefix = 'bounce-call.tutorial.'
+const onboardingGameCountKey = 'bounce-call.onboarding-game-count'
 const seedQueryParam = 'seed'
 const challengeQueryParam = 'challenge'
 const dailyQueryParam = 'daily'
@@ -170,6 +181,10 @@ function App() {
   const recordedFinishedScoreRef = useRef<string | null>(null)
   const autoSubmittedChallengeRef = useRef<string | null>(null)
   const autoSubmittedDailyRef = useRef<string | null>(null)
+  const countdownStartedAt = useRef<number | null>(null)
+  const countdownValueRef = useRef(countdownTotalTicks)
+  const countdownStartValueRef = useRef(countdownTotalTicks)
+  const lastCountdownSoundStepRef = useRef(-1)
   const [board, setBoard] = useState<BoardState>(() => createInitialBoard())
   const currentScene = board.scene
   const [phase, setPhase] = useState<Phase>('ready')
@@ -180,6 +195,9 @@ function App() {
   const [turnIndex, setTurnIndex] = useState(0)
   const [pauseBounceIndex, setPauseBounceIndex] = useState(0)
   const [turnResults, setTurnResults] = useState<TurnResult[]>([])
+  const [countdownValue, setCountdownValue] = useState(countdownTotalTicks)
+  const [firstGuessTimerArmed, setFirstGuessTimerArmed] = useState(false)
+  const [scoreSplash, setScoreSplash] = useState<ScoreSplash | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [highlightedBounce, setHighlightedBounce] = useState<number | null>(null)
   const [paused, setPaused] = useState(document.hidden)
@@ -188,9 +206,10 @@ function App() {
   const [finalScoreOffset, setFinalScoreOffset] = useState<Point>({ x: 0, y: 0 })
   const [renderRevision, setRenderRevision] = useState(0)
   const [boardRotated, setBoardRotated] = useState(() => isPortraitBoardLayout())
+  const [touchInput, setTouchInput] = useState(() => isTouchLikeInput())
   const [localHighScore, setLocalHighScore] = useState(() => readLocalHighScore())
   const [finalMessage, setFinalMessage] = useState('')
-  const [activeTip, setActiveTip] = useState<TutorialTip | null>(null)
+  const [showOnboardingTooltips, setShowOnboardingTooltips] = useState(false)
   const [playerId] = useState(() => readPlayerId())
   const [playerInitials, setPlayerInitials] = useState(() => readPlayerInitials())
   const [activeChallengeSlug, setActiveChallengeSlug] = useState(() => getChallengeSlugFromAddress())
@@ -233,9 +252,21 @@ function App() {
     phase === 'end-ripple' && finalPredictionTarget ? Math.max(0, stepTime - finalPredictionTarget.time) : null
   const visibleGuesses = getEndlessGuesses(turnResults, activeGuess, phase, revealedTime, simulation.bounces)
   const visibleTargets = getEndlessTargets(turnResults, phase, revealedTime)
-  const timerProgress = phase === 'guessing' ? Math.max(0, Math.min(1, timerRemaining / currentTurnSeconds)) : null
+  const timerActive = phase === 'guessing' && (turnResults.length > 0 || firstGuessTimerArmed)
+  const timerProgress = timerActive ? Math.max(0, Math.min(1, timerRemaining / currentTurnSeconds)) : null
   const challengeShareUrl = challenge ? getChallengeUrl(challenge.slug) : ''
   const dailyShareUrl = activeDailyDate ? getDailyUrl(activeDailyDate) : ''
+  const ballDialogue = getBallDialogue({
+    boardRotated,
+    gameScene: currentScene,
+    phase,
+    samples: simulation.samples,
+    showOnboardingTooltips,
+    time: revealedTime,
+    touchInput,
+    firstGuessTimerArmed,
+    turnCount: turnResults.length,
+  })
   const playDueBounceSounds = useCallback(
     (time: number) => {
       if (time < lastSoundTimeRef.current) {
@@ -275,6 +306,8 @@ function App() {
     setActiveGuess(null)
     setTurnIndex(0)
     setTurnResults([])
+    setFirstGuessTimerArmed(false)
+    setScoreSplash(null)
     setHighlightedBounce(null)
     setTimerRemaining(endlessStartSeconds)
     setPauseBounceIndex(0)
@@ -368,6 +401,20 @@ function App() {
     }
   }, [])
 
+  const updateCountdownValue = useCallback((value: number) => {
+    countdownValueRef.current = value
+    setCountdownValue(value)
+  }, [])
+
+  const beginOpeningAnimation = useCallback(() => {
+    stepAnimationStartedAt.current = null
+    stepAnimationFromTime.current = 0
+    stepAnimationToTime.current = simulation.bounces[openingBounceIndex].time
+    setStepTime(0)
+    setFinalTrailTime(0)
+    setPhase('opening')
+  }, [openingBounceIndex, simulation.bounces])
+
   const startGame = useCallback(() => {
     if (!simulation.bounces[openingBounceIndex]) {
       return
@@ -409,6 +456,7 @@ function App() {
       setDailyAttemptStatus('started')
     }
 
+    setShowOnboardingTooltips(incrementOnboardingGameCount() <= 3)
     enableAudio()
     runBestBeforeRef.current = localHighScore
     recordedFinishedScoreRef.current = null
@@ -422,15 +470,18 @@ function App() {
     setTurnIndex(0)
     setTurnResults([])
     setHighlightedBounce(null)
+    setScoreSplash(null)
     setTimerRemaining(endlessStartSeconds)
     setPauseBounceIndex(openingBounceIndex)
     setFinalMessage('')
-    stepAnimationStartedAt.current = null
-    stepAnimationFromTime.current = 0
-    stepAnimationToTime.current = simulation.bounces[openingBounceIndex].time
+    setFirstGuessTimerArmed(false)
+    countdownStartedAt.current = null
+    countdownStartValueRef.current = countdownTotalTicks
+    lastCountdownSoundStepRef.current = -1
+    updateCountdownValue(countdownTotalTicks)
     setStepTime(0)
     setFinalTrailTime(0)
-    setPhase('opening')
+    setPhase('countdown')
   }, [
     activeChallengeSlug,
     challengeAttemptStatus,
@@ -441,6 +492,7 @@ function App() {
     openingBounceIndex,
     playerInitials,
     simulation.bounces,
+    updateCountdownValue,
   ])
 
   const createChallengeFromRun = useCallback(() => {
@@ -656,8 +708,24 @@ function App() {
       const nextGuess = { x, y }
       activeGuessRef.current = nextGuess
       setActiveGuess(nextGuess)
+
+      if (turnResults.length === 0 && !firstGuessTimerArmed) {
+        timerRemainingRef.current = currentTurnSeconds
+        guessTimerStartedAt.current = null
+        setTimerRemaining(currentTurnSeconds)
+        setFirstGuessTimerArmed(true)
+      }
     },
-    [boardRotated, currentScene.height, currentScene.width, muted, phase],
+    [
+      boardRotated,
+      currentScene.height,
+      currentScene.width,
+      currentTurnSeconds,
+      firstGuessTimerArmed,
+      muted,
+      phase,
+      turnResults.length,
+    ],
   )
 
   useEffect(() => {
@@ -731,6 +799,51 @@ function App() {
   }, [])
 
   useEffect(() => {
+    const mediaQuery = window.matchMedia('(pointer: coarse)')
+    const updateTouchInput = () => setTouchInput(mediaQuery.matches)
+
+    updateTouchInput()
+    mediaQuery.addEventListener('change', updateTouchInput)
+    return () => mediaQuery.removeEventListener('change', updateTouchInput)
+  }, [])
+
+  useEffect(() => {
+    if (phase !== 'countdown' || paused) {
+      return
+    }
+
+    let countdownFrame = 0
+    countdownStartedAt.current = null
+    countdownStartValueRef.current = countdownValueRef.current
+
+    const tick = (now: number) => {
+      countdownStartedAt.current ??= now
+      const elapsedTicks = Math.floor((now - countdownStartedAt.current) / 10)
+      const remaining = Math.max(0, countdownStartValueRef.current - elapsedTicks)
+      updateCountdownValue(remaining)
+
+      const soundStep = Math.floor((countdownTotalTicks - remaining) / 10)
+      if (soundStep !== lastCountdownSoundStepRef.current && remaining > 0) {
+        lastCountdownSoundStepRef.current = soundStep
+        if (!muted) {
+          playCountdownTickSound(audioContextRef.current)
+        }
+      }
+
+      if (remaining <= 0) {
+        countdownStartedAt.current = null
+        beginOpeningAnimation()
+        return
+      }
+
+      countdownFrame = requestAnimationFrame(tick)
+    }
+
+    countdownFrame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(countdownFrame)
+  }, [beginOpeningAnimation, muted, paused, phase, updateCountdownValue])
+
+  useEffect(() => {
     if (paused) {
       return
     }
@@ -778,11 +891,15 @@ function App() {
             setPauseBounceIndex(openingBounceIndex)
             setTimerRemaining(endlessStartSeconds)
             guessTimerStartedAt.current = null
+            setFirstGuessTimerArmed(false)
             setPhase('guessing')
           } else {
             const nextPauseIndex = pauseBounceIndex + 1
             const completedTurns = turnIndex + 1
             const latestResult = turnResults[turnResults.length - 1]
+            if (latestResult) {
+              setScoreSplash(createScoreSplash(latestResult, boardRotated, currentScene, getEndlessMisses(turnResults) >= endlessLives))
+            }
             setPauseBounceIndex(nextPauseIndex)
             activeGuessRef.current = null
             setActiveGuess(null)
@@ -799,6 +916,7 @@ function App() {
               setTurnIndex(completedTurns)
               setTimerRemaining(getTurnSeconds(completedTurns))
               guessTimerStartedAt.current = null
+              setFirstGuessTimerArmed(true)
               setPhase('guessing')
             }
           }
@@ -839,6 +957,8 @@ function App() {
     pauseBounceIndex,
     phase,
     paused,
+    boardRotated,
+    currentScene,
     simulation.bounces,
     simulation.samples,
     turnIndex,
@@ -847,7 +967,7 @@ function App() {
   ])
 
   useEffect(() => {
-    if (phase !== 'guessing' || paused) {
+    if (phase !== 'guessing' || paused || (turnResults.length === 0 && !firstGuessTimerArmed)) {
       return
     }
 
@@ -870,7 +990,7 @@ function App() {
 
     timerFrame = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(timerFrame)
-  }, [currentTurnSeconds, finishTurn, paused, phase, turnIndex])
+  }, [currentTurnSeconds, finishTurn, firstGuessTimerArmed, paused, phase, turnIndex, turnResults.length])
 
   useEffect(() => {
     if (!activeChallengeSlug) {
@@ -911,6 +1031,8 @@ function App() {
       setActiveGuess(null)
       setTurnIndex(0)
       setTurnResults([])
+      setFirstGuessTimerArmed(false)
+      setScoreSplash(null)
       setHighlightedBounce(null)
       setTimerRemaining(endlessStartSeconds)
       setPauseBounceIndex(0)
@@ -975,6 +1097,8 @@ function App() {
       setActiveGuess(null)
       setTurnIndex(0)
       setTurnResults([])
+      setFirstGuessTimerArmed(false)
+      setScoreSplash(null)
       setHighlightedBounce(null)
       setTimerRemaining(endlessStartSeconds)
       setPauseBounceIndex(0)
@@ -1001,50 +1125,13 @@ function App() {
   }, [activeDailyDate, daily?.date])
 
   useEffect(() => {
-    if (!activeTip) {
+    if (!scoreSplash) {
       return
     }
 
-    const timeout = window.setTimeout(() => setActiveTip(null), 4200)
+    const timeout = window.setTimeout(() => setScoreSplash(null), 900)
     return () => window.clearTimeout(timeout)
-  }, [activeTip])
-
-  useEffect(() => {
-    if (phase === 'guessing' && turnResults.length === 0) {
-      showTutorialTip(setActiveTip, {
-        key: 'firstPrediction',
-        text: 'Tap where you think the ball will hit next.',
-      })
-    }
-  }, [phase, turnResults.length])
-
-  useEffect(() => {
-    const latestResult = turnResults[turnResults.length - 1]
-    if (!latestResult) {
-      return
-    }
-
-    if (latestResult.points <= 0) {
-      showTutorialTip(setActiveTip, {
-        key: 'firstMiss',
-        text: 'Guess too far from the bounce and you lose a life. You get three.',
-      })
-      return
-    }
-
-    if (latestResult.maxPoints >= 100) {
-      showTutorialTip(setActiveTip, {
-        key: 'longPath',
-        text: 'Big travel means bigger point chances.',
-      })
-      return
-    }
-
-    showTutorialTip(setActiveTip, {
-      key: 'firstScore',
-      text: 'Guess closer to the bounce to score more points.',
-    })
-  }, [turnResults])
+  }, [scoreSplash])
 
   useEffect(() => {
     if (phase !== 'finished') {
@@ -1066,10 +1153,6 @@ function App() {
       }
 
       setFinalMessage(getFinalMessage(totalScore, maxScore, previousBest, turnResults))
-      showTutorialTip(setActiveTip, {
-        key: 'finishedRun',
-        text: 'New Game rolls a fresh board. Copy Link keeps this one.',
-      })
     }, 0)
 
     return () => window.clearTimeout(timeout)
@@ -1179,9 +1262,33 @@ function App() {
           {displayScore !== null && <span>{formatScore(displayScore, maxScore)}</span>}
         </div>
 
-        {activeTip && (
-          <div className="tutorial-tip" role="status">
-            <span>{activeTip.text}</span>
+        {ballDialogue && (
+          <div
+            className={`ball-dialogue ball-dialogue-${ballDialogue.side}`}
+            role="status"
+            style={{ left: `${ballDialogue.xPercent}%`, top: `${ballDialogue.yPercent}%` }}
+          >
+            <span>{ballDialogue.text}</span>
+          </div>
+        )}
+
+        {scoreSplash && (
+          <div
+            className={`score-splash score-splash-${scoreSplash.tone}`}
+            key={scoreSplash.id}
+            aria-hidden="true"
+            style={{ left: `${scoreSplash.xPercent}%`, top: `${scoreSplash.yPercent}%` }}
+          >
+            {scoreSplash.text}
+          </div>
+        )}
+
+        {phase === 'countdown' && (
+          <div className="center-prompt countdown-prompt" role="status" aria-live="polite">
+            <div className="center-prompt-card">
+              <span>GET READY</span>
+              <strong>{countdownValue}</strong>
+            </div>
           </div>
         )}
 
@@ -1739,21 +1846,6 @@ async function copyText(text: string, label: string) {
   await navigator.clipboard.writeText(text)
 }
 
-function showTutorialTip(setTip: (tip: TutorialTip | null) => void, tip: TutorialTip) {
-  try {
-    const storageKey = `${tutorialStoragePrefix}${tip.key}`
-    if (window.localStorage.getItem(storageKey)) {
-      return
-    }
-
-    window.localStorage.setItem(storageKey, 'seen')
-  } catch {
-    // If storage is unavailable, show the tip without making persistence a dependency.
-  }
-
-  setTip(tip)
-}
-
 function getFinalMessage(score: number, maxScore: number, previousBest: number, results: TurnResult[]) {
   const misses = getEndlessMisses(results)
   const efficiency = maxScore > 0 ? score / maxScore : 0
@@ -1799,6 +1891,124 @@ function getRandomGameOverMessage() {
 
 function isPortraitBoardLayout() {
   return window.matchMedia('(orientation: portrait) and (max-width: 900px)').matches
+}
+
+function isTouchLikeInput() {
+  return window.matchMedia('(pointer: coarse)').matches
+}
+
+function incrementOnboardingGameCount() {
+  try {
+    const current = Number(window.localStorage.getItem(onboardingGameCountKey) ?? '0')
+    const next = Number.isFinite(current) ? current + 1 : 1
+    window.localStorage.setItem(onboardingGameCountKey, String(next))
+    return next
+  } catch {
+    return Number.POSITIVE_INFINITY
+  }
+}
+
+function getBallDialogue({
+  boardRotated,
+  firstGuessTimerArmed,
+  gameScene,
+  phase,
+  samples,
+  showOnboardingTooltips,
+  time,
+  touchInput,
+  turnCount,
+}: {
+  boardRotated: boolean
+  firstGuessTimerArmed: boolean
+  gameScene: GameScene
+  phase: Phase
+  samples: DrawOptions['samples']
+  showOnboardingTooltips: boolean
+  time: number
+  touchInput: boolean
+  turnCount: number
+}): BallDialogue | null {
+  const firstGuessText =
+    phase === 'guessing' && turnCount === 0 && !firstGuessTimerArmed
+      ? `${touchInput ? 'Tap' : 'Click'} where you predict the ball will hit next`
+      : null
+  const secondGuessText =
+    phase === 'guessing' && turnCount === 1 && showOnboardingTooltips
+      ? 'Guess before time runs out. Closer guesses score more points. Miss and lose a life.'
+      : null
+  const thirdGuessText =
+    phase === 'guessing' && turnCount === 2 && showOnboardingTooltips
+      ? 'Longer bounces are worth more points'
+      : null
+  const text = firstGuessText ?? secondGuessText ?? thirdGuessText
+
+  if (!text) {
+    return null
+  }
+
+  const state = getStateAtFast(samples, time)
+  const position = getBoardPointScreenPercent(state, gameScene, boardRotated)
+  const edgePadding = 8
+  const x = clamp(position.xPercent, edgePadding, 100 - edgePadding)
+  const y = clamp(position.yPercent, edgePadding, 100 - edgePadding)
+
+  return {
+    text,
+    xPercent: x,
+    yPercent: y,
+    side: getBallDialogueSide(x, y),
+  }
+}
+
+function getBallDialogueSide(xPercent: number, yPercent: number): BallDialogueSide {
+  if (xPercent < 31) {
+    return 'right'
+  }
+
+  if (xPercent > 69) {
+    return 'left'
+  }
+
+  if (yPercent < 36) {
+    return 'below'
+  }
+
+  return 'above'
+}
+
+function createScoreSplash(
+  result: TurnResult,
+  boardRotated: boolean,
+  gameScene: GameScene,
+  gameOverMiss: boolean,
+): ScoreSplash {
+  const position = getBoardPointScreenPercent(result.target, gameScene, boardRotated)
+
+  return {
+    id: result.target.time,
+    text: result.points > 0 ? `+${result.points}` : gameOverMiss ? 'GAME OVER!' : 'MISS!',
+    tone: result.points > 0 ? 'score' : 'miss',
+    xPercent: clamp(position.xPercent, 7, 93),
+    yPercent: clamp(position.yPercent, 7, 93),
+  }
+}
+
+function getBoardPointScreenPercent(point: Point, gameScene: GameScene, boardRotated: boolean) {
+  const boardXPercent = (point.x / gameScene.width) * 100
+  const boardYPercent = (point.y / gameScene.height) * 100
+
+  if (boardRotated) {
+    return {
+      xPercent: 100 - boardYPercent,
+      yPercent: boardXPercent,
+    }
+  }
+
+  return {
+    xPercent: boardXPercent,
+    yPercent: boardYPercent,
+  }
 }
 
 type DrawOptions = {
@@ -1956,7 +2166,7 @@ function getThemePalette(theme: Theme): ThemePalette {
     ripple: '#67e8f9',
     obstacleStroke: '#02061700',
     ball: '#f8fafc',
-    ballFlash: '#ffffff',
+    ballFlash: '#16d7f9',
     ballGlow: '#c7d2fe',
     timerFill: 'rgba(2, 6, 23, 0.58)',
     timerStroke: 'rgba(255, 255, 255, 0.94)',
@@ -2264,7 +2474,7 @@ function drawGuesses(
   highlightedLabel: number | null,
   rotateLabels: boolean,
 ) {
-  guesses.forEach((guess, index) => {
+  guesses.forEach((guess) => {
     const colors = getGuessColors(guess.tone, guess.score)
     const highlighted = highlightedLabel !== null && guess.label === highlightedLabel
     context.beginPath()
@@ -2276,12 +2486,42 @@ function drawGuesses(
     context.stroke()
     context.shadowBlur = 0
 
-    context.fillStyle = colors.text
-    context.font = '700 14px Inter, system-ui, sans-serif'
-    context.textAlign = 'center'
-    context.textBaseline = 'middle'
-    drawCenteredLabel(context, String(guess.label ?? index + 1), guess, rotateLabels)
+    if (guess.label !== undefined) {
+      context.fillStyle = colors.text
+      context.font = '700 14px Inter, system-ui, sans-serif'
+      context.textAlign = 'center'
+      context.textBaseline = 'middle'
+      drawCenteredLabel(context, String(guess.label), guess, rotateLabels)
+    } else {
+      drawGuessCrosshair(context, guess, colors.stroke, highlighted)
+    }
   })
+}
+
+function drawGuessCrosshair(
+  context: CanvasRenderingContext2D,
+  guess: Point,
+  strokeStyle: string,
+  highlighted: boolean,
+) {
+  const inner = highlighted ? 5 : 4
+  const outer = highlighted ? 11 : 9
+
+  context.save()
+  context.strokeStyle = strokeStyle
+  context.lineWidth = highlighted ? 3 : 2.2
+  context.lineCap = 'round'
+  context.beginPath()
+  context.moveTo(guess.x - outer, guess.y)
+  context.lineTo(guess.x - inner, guess.y)
+  context.moveTo(guess.x + inner, guess.y)
+  context.lineTo(guess.x + outer, guess.y)
+  context.moveTo(guess.x, guess.y - outer)
+  context.lineTo(guess.x, guess.y - inner)
+  context.moveTo(guess.x, guess.y + inner)
+  context.lineTo(guess.x, guess.y + outer)
+  context.stroke()
+  context.restore()
 }
 
 function drawTargets(
@@ -2694,6 +2934,7 @@ function getObstacleRadius(obstacle: GameScene['obstacles'][number], center: Poi
 
 function getPhaseLabel(phase: Phase) {
   if (phase === 'ready') return 'ready'
+  if (phase === 'countdown') return 'get ready'
   if (phase === 'opening') return 'watching'
   if (phase === 'turn-reveal') return 'revealing'
   if (phase === 'end-ripple') return 'impact'
@@ -2704,7 +2945,7 @@ function getPhaseLabel(phase: Phase) {
 }
 
 function getVisibleTime(phase: Phase, stepTime: number, pauseTime: number, finalTargetTime?: number) {
-  if (phase === 'ready') {
+  if (phase === 'ready' || phase === 'countdown') {
     return 0
   }
 
@@ -2726,7 +2967,10 @@ function getEndlessGuesses(
   visibleTime: number,
   bounces: Bounce[],
 ): LabeledPoint[] {
-  const resultGuesses = results.flatMap((result, index) => {
+  const replayingHistory = phase === 'score-replay' || phase === 'finished'
+  const visibleResults = replayingHistory ? results : results.slice(-1)
+  const firstVisibleResultIndex = replayingHistory ? 0 : Math.max(0, results.length - visibleResults.length)
+  const resultGuesses = visibleResults.flatMap((result, visibleIndex) => {
     if (!result.guess) {
       return []
     }
@@ -2737,19 +2981,32 @@ function getEndlessGuesses(
     }
 
     const revealed = phase === 'finished' || result.target.time <= visibleTime
+    const index = firstVisibleResultIndex + visibleIndex
     return [
       {
         ...result.guess,
-        label: index + 1,
-        score: getScoreRatio(result),
-        tone: revealed ? undefined : 'tentative' as const,
+        label: replayingHistory ? index + 1 : undefined,
+        score: replayingHistory ? getScoreRatio(result) : undefined,
+        tone: getGuessTone(result, revealed, replayingHistory),
       },
     ]
   })
-  if (phase === 'score-replay' || phase === 'finished') {
+  if (replayingHistory) {
     return resultGuesses
   }
-  return activeGuess ? [...resultGuesses, { ...activeGuess, label: results.length + 1, tone: 'tentative' }] : resultGuesses
+  return activeGuess ? [...resultGuesses, { ...activeGuess, tone: 'tentative' }] : resultGuesses
+}
+
+function getGuessTone(result: TurnResult, revealed: boolean, replayingHistory: boolean): GuessTone | undefined {
+  if (!revealed) {
+    return 'tentative'
+  }
+
+  if (replayingHistory) {
+    return undefined
+  }
+
+  return result.points > 0 ? 'hit' : 'miss'
 }
 
 function getReplayGuessRevealTime(target: Bounce, bounces: Bounce[]) {
@@ -2792,8 +3049,22 @@ function getAnimatedReplayScore(results: TurnResult[], replayTime: number) {
 function getGuessColors(tone: GuessTone | undefined, score = 0.65) {
   if (tone === 'tentative') {
     return {
-      stroke: '#94a3b8',
+      stroke: '#e0eaf7',
       text: '#e2e8f0',
+    }
+  }
+
+  if (tone === 'hit') {
+    return {
+      stroke: '#67e8f9',
+      text: '#ecfeff',
+    }
+  }
+
+  if (tone === 'miss') {
+    return {
+      stroke: '#ff3b5f',
+      text: '#fef3c7',
     }
   }
 
@@ -2814,6 +3085,8 @@ function getTurnSeconds(turnIndex: number) {
 }
 
 function getTimerDecayStep(seconds: number) {
+  if (seconds == 5) return -3
+  if (seconds > 5) return 1.6
   if (seconds > 4) return 0.5
   if (seconds > 3.5) return 0.25
   if (seconds > 3) return 0.1
@@ -2858,10 +3131,12 @@ function getScoreColor(scoreRatio: number) {
   }
 
   const progress = clamp(scoreRatio, 0, 1)
-  const red = interpolate(250, 34, progress)
-  const green = interpolate(204, 211, progress)
-  const blue = interpolate(21, 238, progress)
-  return `rgb(${red}, ${green}, ${blue})`
+  if (progress < 0.5) {
+    return '#ebff3b'
+  }
+  else {
+    return '#67e8f9'
+  }
 }
 
 function getScoreRatio(result: TurnResult) {
@@ -2912,10 +3187,6 @@ function getTrailSegments(samples: DrawOptions['samples']): TrailSegment[] {
 
 function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(maximum, Math.max(minimum, value))
-}
-
-function interpolate(start: number, end: number, progress: number) {
-  return Math.round(start + (end - start) * progress)
 }
 
 function getImpactAge(bounces: Bounce[], time: number) {
@@ -2998,6 +3269,38 @@ function playPlaceSound(audioContext: AudioContext | null) {
   gain.connect(audioContext.destination)
   oscillator.start(now)
   oscillator.stop(now + 0.08)
+}
+
+function playCountdownTickSound(audioContext: AudioContext | null) {
+  if (!audioContext) {
+    return
+  }
+
+  if (audioContext.state === 'suspended') {
+    void audioContext.resume().then(() => playCountdownTickSound(audioContext))
+    return
+  }
+
+  if (audioContext.state !== 'running') {
+    return
+  }
+
+  const now = audioContext.currentTime
+  const oscillator = audioContext.createOscillator()
+  const gain = audioContext.createGain()
+
+  oscillator.type = 'square'
+  oscillator.frequency.setValueAtTime(920, now)
+  oscillator.frequency.exponentialRampToValueAtTime(680, now + 0.018)
+
+  gain.gain.setValueAtTime(0.0001, now)
+  gain.gain.exponentialRampToValueAtTime(0.025, now + 0.002)
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.035)
+
+  oscillator.connect(gain)
+  gain.connect(audioContext.destination)
+  oscillator.start(now)
+  oscillator.stop(now + 0.04)
 }
 
 function getPointToward(from: Point, to: Point, distance: number) {

@@ -372,37 +372,160 @@ canvas {
   pointer-events: auto;
 }
 
-.tutorial-tip {
+.ball-dialogue {
   position: absolute;
-  left: 18px;
-  top: 62px;
   z-index: 4;
-  display: flex;
-  align-items: center;
+  left: 50%;
+  top: 50%;
+  width: max-content;
   max-width: min(340px, calc(100% - 36px));
-  gap: 10px;
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 22px));
   border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 8px;
-  padding: 10px 10px 10px 10px;
+  border-radius: 6px;
+  padding: 10px 12px;
   color: var(--text);
   background: var(--panel);
   box-shadow: 0 18px 54px rgba(0, 0, 0, 0.26);
-  font-size: 0.66rem;
-  font-weight: 780;
-  line-height: 1.2;
+  font-size: clamp(0.7rem, 1.6vw, 0.9rem);
+  font-weight: 500;
+  line-height: 1.18;
+  text-align: center;
   animation: tip-rise 180ms ease both;
 }
 
+.ball-dialogue::after {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  content: '';
+  border-right: 1px solid rgba(148, 163, 184, 0.24);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.24);
+  background: var(--panel);
+}
+
+.ball-dialogue-above {
+  transform: translate(-50%, calc(-100% - 22px));
+}
+
+.ball-dialogue-above::after {
+  left: 50%;
+  bottom: -7px;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.ball-dialogue-below {
+  transform: translate(-50%, 22px);
+}
+
+.ball-dialogue-below::after {
+  left: 50%;
+  top: -7px;
+  transform: translateX(-50%) rotate(225deg);
+}
+
+.ball-dialogue-left {
+  transform: translate(calc(-100% - 22px), -50%);
+}
+
+.ball-dialogue-left::after {
+  top: 50%;
+  right: -7px;
+  transform: translateY(-50%) rotate(-45deg);
+}
+
+.ball-dialogue-right {
+  transform: translate(22px, -50%);
+}
+
+.ball-dialogue-right::after {
+  top: 50%;
+  left: -7px;
+  transform: translateY(-50%) rotate(135deg);
+}
+
+.score-splash {
+  position: absolute;
+  z-index: 5;
+  left: 50%;
+  top: 50%;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  color: var(--accent);
+  font-size: clamp(1.05rem, 3vw, 1.8rem);
+  font-weight: 950;
+  line-height: 1;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.42);
+  animation: score-splash-rise 900ms ease-out both;
+}
+
+.score-splash-miss {
+  color: #ef4444;
+}
+
+.center-prompt {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  pointer-events: none;
+  text-align: center;
+}
+
+.center-prompt-card {
+  display: grid;
+  place-items: center;
+  max-width: min(520px, calc(100vw - 44px));
+  color: var(--text);
+}
+
+.center-prompt-card > span {
+  color: var(--muted);
+  font-size: 1.5rem;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+}
+
+.center-prompt-card strong {
+  font-size: clamp(4rem, 200vw, 6rem);
+  line-height: 1;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--accent), transparent 20%);
+}
+
+.countdown-prompt strong {
+  min-width: 3ch;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
 
 @keyframes tip-rise {
   from {
     opacity: 0;
-    transform: translateY(5px);
   }
 
   to {
     opacity: 1;
-    transform: translateY(0);
+  }
+}
+
+@keyframes score-splash-rise {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -30%) scale(0.86);
+  }
+
+  16% {
+    opacity: 1;
+    transform: translate(-50%, -58%) scale(1.04);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -118%) scale(0.96);
   }
 }
 
@@ -1171,10 +1294,8 @@ button.compact {
     font-size: 0.72rem;
   }
 
-  .tutorial-tip {
-    left: 8px;
-    top: 44px;
-    max-width: calc(100% - 16px);
+  .ball-dialogue {
+    max-width: min(300px, calc(100% - 24px));
     font-size: 0.78rem;
   }
 
@@ -1235,15 +1356,28 @@ button.compact {
     height: 6px;
   }
 
-  .tutorial-tip {
-    left: 8px;
-    top: 42px;
-    max-width: min(240px, calc(100% - 16px));
-    gap: 7px;
-    padding: 7px 8px;
+  .ball-dialogue {
+    max-width: min(235px, calc(100% - 24px));
+    padding: 8px 9px;
     font-size: 0.62rem;
     line-height: 1.18;
   }
+
+  .center-prompt {
+    padding: 14px;
+  }
+
+  .center-prompt-card {
+    max-width: min(270px, calc(100vw - 28px));
+  }
+
+  .center-prompt-card strong {
+    font-size: clamp(4rem, 20vw, 6rem);
+    font-weight: 600;
+    color: color-mix(in srgb, var(--accent), transparent 20%);
+  }
+
+
 
   .game-stage > .score-panel {
     top: 48px;
