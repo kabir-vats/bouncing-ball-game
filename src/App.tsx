@@ -3290,8 +3290,8 @@ function playCountdownTickSound(audioContext: AudioContext | null) {
   const gain = audioContext.createGain()
 
   oscillator.type = 'square'
-  oscillator.frequency.setValueAtTime(920, now)
-  oscillator.frequency.exponentialRampToValueAtTime(680, now + 0.018)
+  oscillator.frequency.setValueAtTime(520, now)
+  oscillator.frequency.exponentialRampToValueAtTime(390, now + 0.018)
 
   gain.gain.setValueAtTime(0.0001, now)
   gain.gain.exponentialRampToValueAtTime(0.025, now + 0.002)
