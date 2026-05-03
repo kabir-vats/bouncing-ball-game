@@ -2833,7 +2833,7 @@ function ScoreLeaderboard({ entries, playerId }: { entries: ChallengeRecord['lea
           >
             <strong>{index + 1}</strong>
             <span>{entry.initials}</span>
-            <span>{entry.score}/{entry.maxScore}</span>
+            <span>{entry.score}</span>
           </span>
         ))}
       </div>
