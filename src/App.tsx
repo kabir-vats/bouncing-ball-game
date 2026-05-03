@@ -139,7 +139,7 @@ const gameOverMessages = [
   'We are all in the gutter, but some of us are looking at the balls.',
   "Here's to the fools who bounce.",
   'City of balls, are you bouncing just for me?',
-  'Elite Ball Knowledge',
+  'Average Ball Knowledge',
 ]
 
 // keyboard patch
@@ -473,7 +473,7 @@ function App() {
       setDailyAttemptStatus('started')
     }
 
-    setShowOnboardingTooltips(incrementOnboardingGameCount() <= 3)
+    setShowOnboardingTooltips(incrementOnboardingGameCount() <= 2)
     enableAudio()
     runBestBeforeRef.current = localHighScore
     recordedFinishedScoreRef.current = null
