@@ -1962,7 +1962,7 @@ function getRandomRankText(status: 'idle' | 'submitting' | 'submitted' | 'error'
     return 'Failed to connect to server'
   }
 
-  return `Rank #${rank.rank} / #${rank.total}`
+  return `#${rank.rank} of ${rank.total} games`
 }
 
 function getSocialRankText({
@@ -1990,7 +1990,7 @@ function getSocialRankText({
     }
 
     if (daily?.playerRank) {
-      return { text: `Daily rank #${daily.playerRank.rank} / #${daily.playerRank.total}`, isError: false }
+      return { text: `#${daily.playerRank.rank} of ${daily.playerRank.total} players today`, isError: false }
     }
 
     if (dailyError) {
@@ -2004,7 +2004,7 @@ function getSocialRankText({
     }
 
     if (challenge?.playerRank) {
-      return { text: `Rank #${challenge.playerRank.rank} / #${challenge.playerRank.total}`, isError: false }
+      return { text: `#${challenge.playerRank.rank} of ${challenge.playerRank.total} players`, isError: false }
     }
 
     if (challengeError) {
