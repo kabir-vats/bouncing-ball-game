@@ -545,7 +545,7 @@ function App() {
       writeChallengeAttemptStatus(nextChallenge.slug, 'submitted')
       setChallengeAttemptStatus('submitted')
       const url = getChallengeUrl(nextChallenge.slug)
-      void copyText(url, 'Challenge link')
+      void copyText(getChallengeShareText(url), 'Challenge link')
       setChallengeCopied(true)
       window.setTimeout(() => setChallengeCopied(false), 1800)
       setChallengeActionBusy(false)
@@ -678,7 +678,7 @@ function App() {
       return
     }
 
-    void copyText(getChallengeUrl(challenge.slug), 'Challenge link')
+    void copyText(getChallengeShareText(getChallengeUrl(challenge.slug)), 'Challenge link')
     setChallengeCopied(true)
     window.setTimeout(() => setChallengeCopied(false), 1800)
   }, [challenge])
@@ -1922,6 +1922,10 @@ async function copyText(text: string, label: string) {
   }
 
   await navigator.clipboard.writeText(text)
+}
+
+function getChallengeShareText(url: string) {
+  return `See if you can beat my score: ${url}`
 }
 
 function getFinalMessage(score: number, maxScore: number, previousBest: number, results: TurnResult[]) {
