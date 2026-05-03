@@ -1955,14 +1955,14 @@ function getRandomGameOverMessage() {
 
 function getRandomRankText(status: 'idle' | 'submitting' | 'submitted' | 'error', rank: RandomScoreRank | null) {
   if (status === 'submitting') {
-    return 'Checking global rank...'
+    return 'Fetching global rank...'
   }
 
   if (status === 'error' || !rank) {
     return 'Failed to connect to server'
   }
 
-  return `Global rank #${rank.rank} / #${rank.total}`
+  return `Rank #${rank.rank} / #${rank.total}`
 }
 
 function getSocialRankText({
@@ -1986,7 +1986,7 @@ function getSocialRankText({
 }) {
   if (activeDailyDate) {
     if (dailyActionBusy) {
-      return { text: 'Checking daily rank...', isError: false }
+      return { text: 'Fetching daily rank...', isError: false }
     }
 
     if (daily?.playerRank) {
@@ -2000,11 +2000,11 @@ function getSocialRankText({
 
   if (activeChallengeSlug) {
     if (challengeActionBusy) {
-      return { text: 'Checking challenge rank...', isError: false }
+      return { text: 'Fetching challenge rank...', isError: false }
     }
 
     if (challenge?.playerRank) {
-      return { text: `Challenge rank #${challenge.playerRank.rank} / #${challenge.playerRank.total}`, isError: false }
+      return { text: `Rank #${challenge.playerRank.rank} / #${challenge.playerRank.total}`, isError: false }
     }
 
     if (challengeError) {
