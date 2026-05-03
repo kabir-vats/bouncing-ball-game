@@ -1935,11 +1935,11 @@ function getBallDialogue({
       : null
   const secondGuessText =
     phase === 'guessing' && turnCount === 1 && showOnboardingTooltips
-      ? 'Guess before time runs out. Closer guesses score more points. Miss and lose a life.'
+      ? 'Guess before time runs out! Closer guesses score more; guess too far and lose a life.'
       : null
   const thirdGuessText =
     phase === 'guessing' && turnCount === 2 && showOnboardingTooltips
-      ? 'Longer bounces are worth more points'
+      ? 'Longer bounces are worth more, but harder to predict.'
       : null
   const text = firstGuessText ?? secondGuessText ?? thirdGuessText
 
