@@ -260,6 +260,7 @@ function App() {
   const timerProgress = timerActive ? Math.max(0, Math.min(1, timerRemaining / currentTurnSeconds)) : null
   const challengeShareUrl = challenge ? getChallengeUrl(challenge.slug) : ''
   const dailyShareUrl = activeDailyDate ? getDailyUrl(activeDailyDate) : ''
+  const showSettingsMenu = phase === 'ready' || phase === 'finished'
   const socialRankText = getSocialRankText({
     activeChallengeSlug,
     activeDailyDate,
@@ -354,6 +355,7 @@ function App() {
       return
     }
 
+    setSettingsOpen(false)
     stepAnimationStartedAt.current = null
     stepAnimationFromTime.current = 0
     stepAnimationToTime.current = turnResults[turnResults.length - 1].target.time + 0.8
@@ -473,7 +475,8 @@ function App() {
       setDailyAttemptStatus('started')
     }
 
-    setShowOnboardingTooltips(incrementOnboardingGameCount() <= 2)
+    setShowOnboardingTooltips(incrementOnboardingGameCount() <= 3)
+    setSettingsOpen(false)
     enableAudio()
     runBestBeforeRef.current = localHighScore
     recordedFinishedScoreRef.current = null
@@ -1183,7 +1186,11 @@ function App() {
   }, [board.seed, localHighScore, maxScore, phase, totalScore, turnResults])
 
   useEffect(() => {
-    if (phase !== 'finished' || !activeChallengeSlug || challengeAttemptStatus !== 'started') {
+    if (
+      (phase !== 'score-replay' && phase !== 'finished')
+      || !activeChallengeSlug
+      || challengeAttemptStatus !== 'started'
+    ) {
       return
     }
 
@@ -1197,7 +1204,7 @@ function App() {
   }, [activeChallengeSlug, challengeAttemptStatus, phase, submitCurrentChallengeScore, totalScore, turnResults.length])
 
   useEffect(() => {
-    if (phase !== 'finished' || !activeDailyDate || dailyAttemptStatus !== 'started') {
+    if ((phase !== 'score-replay' && phase !== 'finished') || !activeDailyDate || dailyAttemptStatus !== 'started') {
       return
     }
 
@@ -1211,7 +1218,12 @@ function App() {
   }, [activeDailyDate, dailyAttemptStatus, phase, submitCurrentDailyScore, totalScore, turnResults.length])
 
   useEffect(() => {
-    if (phase !== 'finished' || board.source !== 'random' || activeChallengeSlug || activeDailyDate) {
+    if (
+      (phase !== 'score-replay' && phase !== 'finished')
+      || board.source !== 'random'
+      || activeChallengeSlug
+      || activeDailyDate
+    ) {
       return
     }
 
@@ -1586,43 +1598,45 @@ function App() {
           </div>
         )}
 
-        <div className="menu-shell">
-          <button
-            type="button"
-            className="menu-toggle icon-button"
-            aria-expanded={settingsOpen}
-            aria-label="Settings"
-            onClick={() => setSettingsOpen((open) => !open)}
-          >
-            ⚙
-          </button>
+        {showSettingsMenu && (
+          <div className="menu-shell">
+            <button
+              type="button"
+              className="menu-toggle icon-button"
+              aria-expanded={settingsOpen}
+              aria-label="Settings"
+              onClick={() => setSettingsOpen((open) => !open)}
+            >
+              <SettingsIcon />
+            </button>
 
-          {settingsOpen && (
-            <aside className="hud" aria-label="Game settings">
-              <button
-                type="button"
-                className={`theme-switch ${theme === 'night' ? 'is-night' : 'is-sky'}`}
-                aria-label={`Switch to ${theme === 'night' ? 'sky' : 'night'} theme`}
-                aria-pressed={theme === 'sky'}
-                onClick={() => setTheme((current) => (current === 'night' ? 'sky' : 'night'))}
-              >
-                <span className="switch-track">
-                  <span className="switch-thumb">{theme === 'night' ? '☾' : '☀'}</span>
-                </span>
-              </button>
+            {settingsOpen && (
+              <aside className="hud" aria-label="Game settings">
+                <button
+                  type="button"
+                  className={`theme-switch ${theme === 'night' ? 'is-night' : 'is-sky'}`}
+                  aria-label={`Switch to ${theme === 'night' ? 'sky' : 'night'} theme`}
+                  aria-pressed={theme === 'sky'}
+                  onClick={() => setTheme((current) => (current === 'night' ? 'sky' : 'night'))}
+                >
+                  <span className="switch-track">
+                    <span className="switch-thumb">{theme === 'night' ? <MoonIcon /> : <SunIcon />}</span>
+                  </span>
+                </button>
 
-              <button
-                type="button"
-                className={`sound-toggle ${muted ? 'is-muted' : ''}`}
-                aria-label={muted ? 'Unmute sound' : 'Mute sound'}
-                aria-pressed={!muted}
-                onClick={() => setMuted((current) => !current)}
-              >
-                <span>{muted ? '🔇' : '🔊'}</span>
-              </button>
-            </aside>
-          )}
-        </div>
+                <button
+                  type="button"
+                  className={`sound-toggle ${muted ? 'is-muted' : ''}`}
+                  aria-label={muted ? 'Unmute sound' : 'Mute sound'}
+                  aria-pressed={!muted}
+                  onClick={() => setMuted((current) => !current)}
+                >
+                  {muted ? <SoundOffIcon /> : <SoundOnIcon />}
+                </button>
+              </aside>
+            )}
+          </div>
+        )}
       </section>
       <Analytics />
     </main>
@@ -2981,6 +2995,50 @@ function CalendarIcon() {
       <rect x="5.5" y="6.5" width="13" height="12" rx="2.5" />
       <path d="M8.5 4.8v3.4M15.5 4.8v3.4M5.5 10.2h13" />
       <path d="M9 13.5h.01M12 13.5h.01M15 13.5h.01M9 16h.01M12 16h.01M15 16h.01" />
+    </svg>
+  )
+}
+
+function SettingsIcon() {
+  return (
+    <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M12 2.8v3M12 18.2v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2.8 12h3M18.2 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" />
+    </svg>
+  )
+}
+
+function SunIcon() {
+  return (
+    <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2.5v2.8M12 18.7v2.8M4.6 4.6l2 2M17.4 17.4l2 2M2.5 12h2.8M18.7 12h2.8M4.6 19.4l2-2M17.4 6.6l2-2" />
+    </svg>
+  )
+}
+
+function MoonIcon() {
+  return (
+    <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+      <path d="M18.6 15.2A7.2 7.2 0 0 1 8.8 5.4 7.6 7.6 0 1 0 18.6 15.2Z" />
+    </svg>
+  )
+}
+
+function SoundOnIcon() {
+  return (
+    <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+      <path d="M4.5 9.2v5.6h3.2l4.7 4.1V5.1L7.7 9.2H4.5Z" />
+      <path d="M16 8.2a5.2 5.2 0 0 1 0 7.6M18.7 5.7a9 9 0 0 1 0 12.6" />
+    </svg>
+  )
+}
+
+function SoundOffIcon() {
+  return (
+    <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+      <path d="M4.5 9.2v5.6h3.2l4.7 4.1V5.1L7.7 9.2H4.5Z" />
+      <path d="M16 9l4.5 4.5M20.5 9 16 13.5" />
     </svg>
   )
 }
