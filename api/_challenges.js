@@ -18,16 +18,28 @@ export function createSlug() {
 
 export function validateScorePayload(body) {
   const initials = cleanInitials(body.initials ?? body.creatorInitials)
-  const localScore = Number(body.score)
-  const localMaxScore = Number(body.maxScore)
-  const playerId = String(body.playerId ?? '').slice(0, 128)
+  const payload = validateRunPayload(body)
 
-  if (!isAllowedInitials(initials) || !playerId || !Number.isFinite(localScore) || !Number.isFinite(localMaxScore)) {
+  if (!payload || !isAllowedInitials(initials)) {
     return null
   }
 
   return {
     initials,
+    ...payload,
+  }
+}
+
+export function validateRunPayload(body) {
+  const localScore = Number(body.score)
+  const localMaxScore = Number(body.maxScore)
+  const playerId = String(body.playerId ?? '').slice(0, 128)
+
+  if (!playerId || !Number.isFinite(localScore) || !Number.isFinite(localMaxScore)) {
+    return null
+  }
+
+  return {
     playerId,
     localScore: Math.max(0, Math.floor(localScore)),
     localMaxScore: Math.max(0, Math.floor(localMaxScore)),
@@ -37,6 +49,16 @@ export function validateScorePayload(body) {
 
 export function verifyScorePayload(body, seed, context) {
   const payload = validateScorePayload(body)
+  const score = verifyValidatedRunPayload(payload, seed, context)
+
+  return score ? { initials: payload.initials, ...score } : null
+}
+
+export function verifyRunPayload(body, seed, context) {
+  return verifyValidatedRunPayload(validateRunPayload(body), seed, context)
+}
+
+function verifyValidatedRunPayload(payload, seed, context) {
   const cleanSeed = Number(seed)
 
   if (!payload || !Number.isSafeInteger(cleanSeed) || cleanSeed < 0) {
@@ -60,7 +82,6 @@ export function verifyScorePayload(body, seed, context) {
   }
 
   return {
-    initials: payload.initials,
     playerId: payload.playerId,
     score: computed.score,
     maxScore: computed.maxScore,
@@ -88,7 +109,7 @@ function extractGuesses(body) {
   })
 }
 
-export async function fetchChallenge(slug) {
+export async function fetchChallenge(slug, playerId = '') {
   const clean = cleanSlug(slug)
   const rows = await supabase(
     `challenges?slug=eq.${encodeURIComponent(clean)}&select=slug,seed,created_at,creator_initials,creator_score`,
@@ -119,6 +140,36 @@ export async function fetchChallenge(slug) {
       maxScore: score.max_score,
       createdAt: score.created_at,
     })),
+    playerRank: await fetchPlayerScoreRank('challenge_scores', 'challenge_slug', clean, playerId),
+  }
+}
+
+export async function fetchPlayerScoreRank(table, scopeColumn, scopeValue, playerId) {
+  const cleanPlayerId = String(playerId ?? '').slice(0, 128)
+
+  if (!cleanPlayerId) {
+    return null
+  }
+
+  const scopeFilter = `${scopeColumn}=eq.${encodeURIComponent(scopeValue)}`
+  const playerRows = await supabase(
+    `${table}?${scopeFilter}&player_id=eq.${encodeURIComponent(cleanPlayerId)}&select=id,score,created_at&order=created_at.desc&limit=1`,
+  )
+  const playerScore = playerRows[0]
+
+  if (!playerScore) {
+    return null
+  }
+
+  const higherScores = await supabase(`${table}?${scopeFilter}&score=gt.${playerScore.score}&select=id`)
+  const earlierTies = await supabase(
+    `${table}?${scopeFilter}&score=eq.${playerScore.score}&created_at=lt.${encodeURIComponent(playerScore.created_at)}&select=id`,
+  )
+  const allScores = await supabase(`${table}?${scopeFilter}&select=id`)
+
+  return {
+    rank: higherScores.length + earlierTies.length + 1,
+    total: allScores.length,
   }
 }
 

@@ -37,7 +37,7 @@ export default async function handler(req, res) {
       },
     })
 
-    json(res, 201, await fetchDaily(dailyDate))
+    json(res, 201, await fetchDaily(dailyDate, score.playerId))
   } catch (error) {
     json(res, error.status ?? 500, { error: error.message ?? 'Could not submit daily score.' })
   }

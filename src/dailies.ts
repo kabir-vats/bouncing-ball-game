@@ -1,9 +1,10 @@
-import type { ChallengeEntry, ChallengeTurn, SubmitChallengeScoreInput } from './challenges'
+import type { ChallengeEntry, ChallengeTurn, ScoreRank, SubmitChallengeScoreInput } from './challenges'
 
 export type DailyRecord = {
   date: string
   seed: number
   leaderboard: ChallengeEntry[]
+  playerRank?: ScoreRank | null
 }
 
 export type SubmitDailyScoreInput = SubmitChallengeScoreInput

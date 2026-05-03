@@ -14,6 +14,11 @@ export type ChallengeEntry = {
   createdAt: string
 }
 
+export type ScoreRank = {
+  rank: number
+  total: number
+}
+
 export type ChallengeRecord = {
   slug: string
   seed: number
@@ -21,6 +26,7 @@ export type ChallengeRecord = {
   creatorInitials: string
   creatorScore: number
   leaderboard: ChallengeEntry[]
+  playerRank?: ScoreRank | null
 }
 
 export type CreateChallengeInput = {

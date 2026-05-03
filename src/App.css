@@ -281,6 +281,22 @@ canvas {
   line-height: 1.25;
 }
 
+.global-rank-note {
+  width: 100%;
+  margin: 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  padding: 9px 10px 0;
+  color: var(--accent);
+  font-size: 0.9rem;
+  font-weight: 850;
+  line-height: 1.18;
+}
+
+.global-rank-note.is-error {
+  color: var(--muted);
+  font-weight: 760;
+}
+
 .draggable-final-score {
   display: grid;
   gap: 12px;

@@ -15,6 +15,7 @@ import {
   submitChallengeScore,
 } from './challenges'
 import { type DailyRecord, getDaily, getDailyDateKey, getDailyUrl, submitDailyScore } from './dailies'
+import { type RandomScoreRank, submitRandomScore } from './randomScores'
 import {
   type Bounce,
   type GameScene,
@@ -181,6 +182,7 @@ function App() {
   const recordedFinishedScoreRef = useRef<string | null>(null)
   const autoSubmittedChallengeRef = useRef<string | null>(null)
   const autoSubmittedDailyRef = useRef<string | null>(null)
+  const autoSubmittedRandomScoreRef = useRef<string | null>(null)
   const countdownStartedAt = useRef<number | null>(null)
   const countdownValueRef = useRef(countdownTotalTicks)
   const countdownStartValueRef = useRef(countdownTotalTicks)
@@ -209,6 +211,8 @@ function App() {
   const [touchInput, setTouchInput] = useState(() => isTouchLikeInput())
   const [localHighScore, setLocalHighScore] = useState(() => readLocalHighScore())
   const [finalMessage, setFinalMessage] = useState('')
+  const [randomScoreRank, setRandomScoreRank] = useState<RandomScoreRank | null>(null)
+  const [randomScoreRankStatus, setRandomScoreRankStatus] = useState<'idle' | 'submitting' | 'submitted' | 'error'>('idle')
   const [showOnboardingTooltips, setShowOnboardingTooltips] = useState(false)
   const [playerId] = useState(() => readPlayerId())
   const [playerInitials, setPlayerInitials] = useState(() => readPlayerInitials())
@@ -256,6 +260,16 @@ function App() {
   const timerProgress = timerActive ? Math.max(0, Math.min(1, timerRemaining / currentTurnSeconds)) : null
   const challengeShareUrl = challenge ? getChallengeUrl(challenge.slug) : ''
   const dailyShareUrl = activeDailyDate ? getDailyUrl(activeDailyDate) : ''
+  const socialRankText = getSocialRankText({
+    activeChallengeSlug,
+    activeDailyDate,
+    challenge,
+    challengeActionBusy,
+    challengeError,
+    daily,
+    dailyActionBusy,
+    dailyError,
+  })
   const ballDialogue = getBallDialogue({
     boardRotated,
     gameScene: currentScene,
@@ -298,6 +312,7 @@ function App() {
     recordedFinishedScoreRef.current = null
     autoSubmittedChallengeRef.current = null
     autoSubmittedDailyRef.current = null
+    autoSubmittedRandomScoreRef.current = null
     setBoard({
       scene: generateRandomScene(defaultGeneratorConfig, endlessGenerationBounces, nextSeed),
       seed: nextSeed,
@@ -315,6 +330,8 @@ function App() {
     setFinalTrailTime(0)
     setFinalScoreOffset({ x: 0, y: 0 })
     setFinalMessage('')
+    setRandomScoreRank(null)
+    setRandomScoreRankStatus('idle')
     setActiveChallengeSlug(null)
     setChallenge(null)
     setChallengeError('')
@@ -462,6 +479,7 @@ function App() {
     recordedFinishedScoreRef.current = null
     autoSubmittedChallengeRef.current = null
     autoSubmittedDailyRef.current = null
+    autoSubmittedRandomScoreRef.current = null
     activeGuessRef.current = null
     finishedLoopAbsoluteTimeRef.current = 0
     lastSoundBounceRef.current = -1
@@ -474,6 +492,8 @@ function App() {
     setTimerRemaining(endlessStartSeconds)
     setPauseBounceIndex(openingBounceIndex)
     setFinalMessage('')
+    setRandomScoreRank(null)
+    setRandomScoreRankStatus('idle')
     setFirstGuessTimerArmed(false)
     countdownStartedAt.current = null
     countdownStartValueRef.current = countdownTotalTicks
@@ -1040,6 +1060,8 @@ function App() {
       setFinalTrailTime(0)
       setFinalScoreOffset({ x: 0, y: 0 })
       setFinalMessage('')
+      setRandomScoreRank(null)
+      setRandomScoreRankStatus('idle')
       setChallengeAttemptStatus(readChallengeAttemptStatus(activeChallengeSlug))
       setChallengeLoading(false)
       setPhase('ready')
@@ -1106,6 +1128,8 @@ function App() {
       setFinalTrailTime(0)
       setFinalScoreOffset({ x: 0, y: 0 })
       setFinalMessage('')
+      setRandomScoreRank(null)
+      setRandomScoreRankStatus('idle')
       setDailyAttemptStatus(readDailyAttemptStatus(activeDailyDate))
       setDailyLoading(false)
       setPhase('ready')
@@ -1185,6 +1209,36 @@ function App() {
     autoSubmittedDailyRef.current = runKey
     submitCurrentDailyScore()
   }, [activeDailyDate, dailyAttemptStatus, phase, submitCurrentDailyScore, totalScore, turnResults.length])
+
+  useEffect(() => {
+    if (phase !== 'finished' || board.source !== 'random' || activeChallengeSlug || activeDailyDate) {
+      return
+    }
+
+    const runKey = `${board.seed}:${turnResults.length}:${totalScore}`
+    if (autoSubmittedRandomScoreRef.current === runKey) {
+      return
+    }
+
+    autoSubmittedRandomScoreRef.current = runKey
+    setRandomScoreRankStatus('submitting')
+    setRandomScoreRank(null)
+
+    void submitRandomScore({
+      maxScore,
+      playerId,
+      score: totalScore,
+      seed: board.seed,
+      guesses: serializeGuesses(turnResults),
+      turns: serializeTurns(turnResults),
+    }).then((rank) => {
+      setRandomScoreRank(rank)
+      setRandomScoreRankStatus('submitted')
+    }).catch(() => {
+      setRandomScoreRank(null)
+      setRandomScoreRankStatus('error')
+    })
+  }, [activeChallengeSlug, activeDailyDate, board.seed, board.source, maxScore, phase, playerId, totalScore, turnResults])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -1464,6 +1518,16 @@ function App() {
                 variant="grid"
               />
               {finalMessage && <p className="final-score-note">{finalMessage}</p>}
+              {!activeDailyDate && !activeChallengeSlug && randomScoreRankStatus !== 'idle' && (
+                <p className={`global-rank-note ${randomScoreRankStatus === 'error' ? 'is-error' : ''}`}>
+                  {getRandomRankText(randomScoreRankStatus, randomScoreRank)}
+                </p>
+              )}
+              {socialRankText && (
+                <p className={`global-rank-note ${socialRankText.isError ? 'is-error' : ''}`}>
+                  {socialRankText.text}
+                </p>
+              )}
               <div className="score-actions">
                 <FlipButton type="button" hoverText="Fresh Board" onClick={startNewRound}>
                   New Game
@@ -1887,6 +1951,68 @@ function getFinalMessage(score: number, maxScore: number, previousBest: number, 
 
 function getRandomGameOverMessage() {
   return gameOverMessages[Math.floor(Math.random() * gameOverMessages.length)]
+}
+
+function getRandomRankText(status: 'idle' | 'submitting' | 'submitted' | 'error', rank: RandomScoreRank | null) {
+  if (status === 'submitting') {
+    return 'Checking global rank...'
+  }
+
+  if (status === 'error' || !rank) {
+    return 'Failed to connect to server'
+  }
+
+  return `Global rank #${rank.rank} / #${rank.total}`
+}
+
+function getSocialRankText({
+  activeChallengeSlug,
+  activeDailyDate,
+  challenge,
+  challengeActionBusy,
+  challengeError,
+  daily,
+  dailyActionBusy,
+  dailyError,
+}: {
+  activeChallengeSlug: string | null
+  activeDailyDate: string | null
+  challenge: ChallengeRecord | null
+  challengeActionBusy: boolean
+  challengeError: string
+  daily: DailyRecord | null
+  dailyActionBusy: boolean
+  dailyError: string
+}) {
+  if (activeDailyDate) {
+    if (dailyActionBusy) {
+      return { text: 'Checking daily rank...', isError: false }
+    }
+
+    if (daily?.playerRank) {
+      return { text: `Daily rank #${daily.playerRank.rank} / #${daily.playerRank.total}`, isError: false }
+    }
+
+    if (dailyError) {
+      return { text: 'Failed to connect to server', isError: true }
+    }
+  }
+
+  if (activeChallengeSlug) {
+    if (challengeActionBusy) {
+      return { text: 'Checking challenge rank...', isError: false }
+    }
+
+    if (challenge?.playerRank) {
+      return { text: `Challenge rank #${challenge.playerRank.rank} / #${challenge.playerRank.total}`, isError: false }
+    }
+
+    if (challengeError) {
+      return { text: 'Failed to connect to server', isError: true }
+    }
+  }
+
+  return null
 }
 
 function isPortraitBoardLayout() {

@@ -1,4 +1,5 @@
 import { supabase } from './_supabase.js'
+import { fetchPlayerScoreRank } from './_challenges.js'
 
 const dailyTimeZone = 'America/Los_Angeles'
 
@@ -37,7 +38,7 @@ export async function ensureDaily(date) {
   return { date: clean, seed }
 }
 
-export async function fetchDaily(date) {
+export async function fetchDaily(date, playerId = '') {
   const daily = await ensureDaily(date)
   const scores = await supabase(
     `daily_scores?daily_date=eq.${encodeURIComponent(daily.date)}&select=id,player_id,initials,score,max_score,created_at&order=score.desc,created_at.asc&limit=100`,
@@ -54,6 +55,7 @@ export async function fetchDaily(date) {
       maxScore: score.max_score,
       createdAt: score.created_at,
     })),
+    playerRank: await fetchPlayerScoreRank('daily_scores', 'daily_date', daily.date, playerId),
   }
 }
 

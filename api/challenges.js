@@ -48,7 +48,7 @@ export default async function handler(req, res) {
       },
     })
 
-    json(res, 201, await fetchChallenge(slug))
+    json(res, 201, await fetchChallenge(slug, score.playerId))
   } catch (error) {
     json(res, error.status ?? 500, { error: error.message ?? 'Could not create challenge.' })
   }
