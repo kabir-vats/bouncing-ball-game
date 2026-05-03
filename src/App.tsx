@@ -475,7 +475,7 @@ function App() {
       setDailyAttemptStatus('started')
     }
 
-    setShowOnboardingTooltips(incrementOnboardingGameCount() <= 3)
+    setShowOnboardingTooltips(incrementOnboardingGameCount() <= 1)
     setSettingsOpen(false)
     enableAudio()
     runBestBeforeRef.current = localHighScore
