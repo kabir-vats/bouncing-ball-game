@@ -10,7 +10,7 @@ The challenge flow lives in this repo, but production leaderboards need a shared
   - `SUPABASE_URL`
   - `SUPABASE_SERVICE_ROLE_KEY`
 
-The frontend is API-first and falls back to local storage during development if the API/database is unavailable. Local fallback is useful for UI testing, but it is not shared between browsers.
+Challenge creation, loading, and score submission require the API/database. If either is unavailable, the UI shows a retryable error instead of creating local-only challenge records.
 
 ## Supabase Schema
 
@@ -64,7 +64,7 @@ notify pgrst, 'reload schema';
 
 ## Current Security Model
 
-- One official attempt per browser is enforced with local storage.
+- One official attempt per browser is tracked with local storage.
 - The API also prevents duplicate scores per `player_id` per challenge.
 - No sign-in is required, so determined users can replay in a different browser or clear storage.
 - The API recomputes leaderboard scores server-side from the seed and submitted guesses, stores the computed score, and logs any mismatch with the browser's local score.

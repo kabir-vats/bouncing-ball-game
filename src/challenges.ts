@@ -43,170 +43,79 @@ export type SubmitChallengeScoreInput = {
   turns: ChallengeTurn[]
 }
 
-const challengeStorageKey = 'bounce-call.local-challenges'
+export class ChallengeApiError extends Error {
+  status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'ChallengeApiError'
+    this.status = status
+  }
+}
 
 export async function createChallenge(input: CreateChallengeInput): Promise<ChallengeRecord> {
-  const response = await postApi<ChallengeRecord>('/api/challenges', input)
-  if (response) {
-    return response
-  }
-
-  return createLocalChallenge(input)
+  return postApi<ChallengeRecord>('/api/challenges', input)
 }
 
 export async function getChallenge(slug: string): Promise<ChallengeRecord> {
-  const response = await getApi<ChallengeRecord>(`/api/challenges/${encodeURIComponent(slug)}`)
-  if (response) {
-    return response
-  }
-
-  const challenge = readLocalChallenges()[slug]
-  if (!challenge) {
-    throw new Error('Challenge not found.')
-  }
-
-  return challenge
+  return getApi<ChallengeRecord>(`/api/challenges/${encodeURIComponent(slug)}`)
 }
 
 export async function submitChallengeScore(
   slug: string,
   input: SubmitChallengeScoreInput,
 ): Promise<ChallengeRecord> {
-  const response = await postApi<ChallengeRecord>(`/api/challenges/${encodeURIComponent(slug)}/scores`, input)
-  if (response) {
-    return response
-  }
-
-  return submitLocalChallengeScore(slug, input)
+  return postApi<ChallengeRecord>(`/api/challenges/${encodeURIComponent(slug)}/scores`, input)
 }
 
 export function getChallengeUrl(slug: string) {
   return `${window.location.origin}/c/${slug}`
 }
 
-function createLocalChallenge(input: CreateChallengeInput) {
-  const slug = createSlug()
-  const now = new Date().toISOString()
-  const challenge: ChallengeRecord = {
-    slug,
-    seed: input.seed,
-    createdAt: now,
-    creatorInitials: input.creatorInitials,
-    creatorScore: input.score,
-    leaderboard: [
-      {
-        id: createEntryId(input.playerId),
-        initials: input.creatorInitials,
-        playerId: input.playerId,
-        score: input.score,
-        maxScore: input.maxScore,
-        createdAt: now,
-      },
-    ],
-  }
+async function getApi<T>(url: string): Promise<T> {
+  const response = await fetchApi(url, {
+    headers: { Accept: 'application/json' },
+  })
 
-  const challenges = readLocalChallenges()
-  challenges[slug] = challenge
-  writeLocalChallenges(challenges)
-  return challenge
+  return readApiResponse<T>(response)
 }
 
-function submitLocalChallengeScore(slug: string, input: SubmitChallengeScoreInput) {
-  const challenges = readLocalChallenges()
-  const challenge = challenges[slug]
-  if (!challenge) {
-    throw new Error('Challenge not found.')
-  }
-
-  const entryId = createEntryId(input.playerId)
-  if (challenge.leaderboard.some((entry) => entry.id === entryId)) {
-    return challenge
-  }
-
-  challenge.leaderboard = [
-    ...challenge.leaderboard,
-    {
-      id: entryId,
-      initials: input.initials,
-      playerId: input.playerId,
-      score: input.score,
-      maxScore: input.maxScore,
-      createdAt: new Date().toISOString(),
+async function postApi<T>(url: string, body: unknown): Promise<T> {
+  const response = await fetchApi(url, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
     },
-  ].sort(compareEntries)
+    body: JSON.stringify(body),
+  })
 
-  challenges[slug] = challenge
-  writeLocalChallenges(challenges)
-  return challenge
+  return readApiResponse<T>(response)
 }
 
-async function getApi<T>(url: string): Promise<T | null> {
+async function fetchApi(url: string, init: RequestInit): Promise<Response> {
   try {
-    const response = await fetch(url, {
-      headers: { Accept: 'application/json' },
-    })
-
-    if (!response.ok) {
-      return null
-    }
-
-    return await response.json() as T
+    return await fetch(url, init)
   } catch {
-    return null
+    throw new ChallengeApiError('Challenge service is unavailable. Try again.', 0)
   }
 }
 
-async function postApi<T>(url: string, body: unknown): Promise<T | null> {
+async function readApiResponse<T>(response: Response): Promise<T> {
+  let body: unknown
   try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    })
-
-    if (!response.ok) {
-      return null
-    }
-
-    return await response.json() as T
+    body = await response.json()
   } catch {
-    return null
-  }
-}
-
-function readLocalChallenges() {
-  try {
-    const stored = window.localStorage.getItem(challengeStorageKey)
-    return stored ? JSON.parse(stored) as Record<string, ChallengeRecord> : {}
-  } catch {
-    return {}
-  }
-}
-
-function writeLocalChallenges(challenges: Record<string, ChallengeRecord>) {
-  try {
-    window.localStorage.setItem(challengeStorageKey, JSON.stringify(challenges))
-  } catch {
-    // Local fallback is best-effort; production should use the API database.
-  }
-}
-
-function createSlug() {
-  const bytes = crypto.getRandomValues(new Uint8Array(5))
-  return Array.from(bytes, (byte) => byte.toString(36).padStart(2, '0')).join('').slice(0, 8)
-}
-
-function createEntryId(playerId: string) {
-  return `player:${playerId}`
-}
-
-function compareEntries(first: ChallengeEntry, second: ChallengeEntry) {
-  if (second.score !== first.score) {
-    return second.score - first.score
+    body = null
   }
 
-  return first.createdAt.localeCompare(second.createdAt)
+  if (!response.ok) {
+    const message =
+      body && typeof body === 'object' && 'error' in body && typeof body.error === 'string'
+        ? body.error
+        : 'Challenge service is unavailable.'
+    throw new ChallengeApiError(message, response.status)
+  }
+
+  return body as T
 }

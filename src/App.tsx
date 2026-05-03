@@ -8,6 +8,7 @@ import {
 } from '../shared/initials.js'
 import {
   type ChallengeRecord,
+  ChallengeApiError,
   createChallenge,
   getChallenge,
   getChallengeUrl,
@@ -528,6 +529,20 @@ function App() {
       setChallengeAttemptStatus('submitted')
       setChallengeActionBusy(false)
     }).catch((error: unknown) => {
+      if (error instanceof ChallengeApiError && error.status === 409) {
+        void getChallenge(activeChallengeSlug).then((loadedChallenge) => {
+          setChallenge(loadedChallenge)
+          writeChallengeAttemptStatus(activeChallengeSlug, 'submitted')
+          setChallengeAttemptStatus('submitted')
+          setChallengeError('')
+        }).catch(() => {
+          setChallengeError('Score already submitted, but the leaderboard could not be refreshed.')
+        }).finally(() => {
+          setChallengeActionBusy(false)
+        })
+        return
+      }
+
       setChallengeError(error instanceof Error ? error.message : 'Could not submit score.')
       setChallengeActionBusy(false)
     })
